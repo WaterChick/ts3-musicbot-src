@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TS3 Music Bot</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0f0f0f;
+    --surface:  #1a1a1a;
+    --surface2: #242424;
+    --border:   #2a2a2a;
+    --accent:   #7c5cbf;
+    --accent-h: #9b7de0;
+    --text:     #e4e4e4;
+    --muted:    #777;
+    --danger:   #c0392b;
+    --green:    #27ae60;
+    --radius:   8px;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  /* ── header ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+  }
+  .header-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 14px 0;
+  }
+  .logo { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
+  .logo span { color: var(--accent); }
+  .status-pill {
+    font-size: 12px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    background: var(--surface2);
+    color: var(--muted);
+    border: 1px solid var(--border);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .status-pill.playing  { color: var(--green);  border-color: var(--green);  background: #1a2e1e; }
+  .status-pill.paused   { color: #e6a817;        border-color: #e6a817;       background: #2a2210; }
+  .status-pill.stopped  { color: var(--muted);   border-color: var(--border); background: var(--surface2); }
+
+  /* ── now-playing bar ── */
+  .now-playing {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+  }
+  .now-playing-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 12px 0;
+    flex-wrap: wrap;
+  }
+  .np-label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; flex-shrink: 0; }
+  .np-track { flex: 1; min-width: 0; }
+  .np-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .np-artists { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .np-empty { color: var(--muted); font-style: italic; }
+  .controls { display: flex; gap: 8px; flex-shrink: 0; }
+  .btn {
+    padding: 6px 14px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent-h); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { background: var(--accent-h); border-color: var(--accent-h); }
+  .btn.danger:hover { border-color: var(--danger); color: var(--danger); }
+
+  /* ── main layout ── */
+  .main {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 24px;
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 24px;
+    align-items: start;
+  }
+
+  /* ── section card ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .card-header .count {
+    font-size: 11px;
+    font-weight: 400;
+    background: var(--surface2);
+    padding: 2px 8px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+  }
+
+  /* ── add URL form ── */
+  .add-form { padding: 14px 16px; display: flex; gap: 8px; }
+  .add-form input {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: var(--radius);
+    padding: 8px 12px;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .add-form input::placeholder { color: var(--muted); }
+  .add-form input:focus { border-color: var(--accent); }
+
+  /* ── queue list ── */
+  .queue-list { max-height: 520px; overflow-y: auto; }
+  .queue-list::-webkit-scrollbar { width: 6px; }
+  .queue-list::-webkit-scrollbar-track { background: transparent; }
+  .queue-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .track-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.1s;
+  }
+  .track-item:last-child { border-bottom: none; }
+  .track-item:hover { background: var(--surface2); }
+  .track-num { color: var(--muted); font-size: 12px; width: 22px; flex-shrink: 0; text-align: right; }
+  .track-info { flex: 1; min-width: 0; }
+  .track-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+  .track-artist { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .track-remove {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 16px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: all 0.15s;
+    flex-shrink: 0;
+    line-height: 1;
+  }
+  .track-remove:hover { color: var(--danger); background: rgba(192,57,43,0.1); }
+
+  .empty-state {
+    padding: 32px 16px;
+    text-align: center;
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  /* ── local files ── */
+  .local-list { max-height: 600px; overflow-y: auto; }
+  .local-list::-webkit-scrollbar { width: 6px; }
+  .local-list::-webkit-scrollbar-track { background: transparent; }
+  .local-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .file-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 16px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.1s;
+  }
+  .file-item:last-child { border-bottom: none; }
+  .file-item:hover { background: var(--surface2); }
+  .file-num { color: var(--muted); font-size: 11px; width: 22px; flex-shrink: 0; text-align: right; }
+  .file-name { flex: 1; min-width: 0; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .file-add {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    transition: all 0.15s;
+    flex-shrink: 0;
+  }
+  .file-add:hover { border-color: var(--accent); color: var(--accent-h); }
+
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 16px;
+    font-size: 13px;
+    color: var(--text);
+    opacity: 0;
+    transform: translateY(8px);
+    transition: all 0.2s;
+    pointer-events: none;
+    z-index: 999;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.ok   { border-color: var(--green); color: var(--green); }
+  .toast.err  { border-color: var(--danger); color: var(--danger); }
+
+  @media (max-width: 768px) {
+    .main { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="logo">TS3 <span>Music Bot</span></div>
+    <div class="status-pill stopped" id="statusPill">Stopped</div>
+  </div>
+</header>
+
+<div class="now-playing">
+  <div class="now-playing-inner">
+    <div class="np-label">Now Playing</div>
+    <div class="np-track">
+      <div class="np-empty" id="npEmpty">Nothing playing</div>
+      <div class="np-title" id="npTitle" style="display:none"></div>
+      <div class="np-artists" id="npArtists" style="display:none"></div>
+    </div>
+    <div class="controls">
+      <button class="btn" onclick="ctrl('play')">▶ Play</button>
+      <button class="btn" onclick="ctrl('pause')">⏸ Pause</button>
+      <button class="btn" onclick="ctrl('resume')">⏯ Resume</button>
+      <button class="btn" onclick="ctrl('skip')">⏭ Skip</button>
+      <button class="btn danger" onclick="ctrl('stop')">⏹ Stop</button>
+    </div>
+  </div>
+</div>
+
+<div class="main">
+  <!-- Left column -->
+  <div style="display:flex;flex-direction:column;gap:16px;">
+
+    <div class="card">
+      <div class="card-header">Add to Queue</div>
+      <div class="add-form">
+        <input type="text" id="urlInput" placeholder="YouTube / Spotify / SoundCloud link or search…" onkeydown="if(event.key==='Enter')addUrl()">
+        <button class="btn primary" onclick="addUrl()">+ Add</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        Queue
+        <span class="count" id="queueCount">0</span>
+      </div>
+      <div class="queue-list" id="queueList">
+        <div class="empty-state">Queue is empty</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Right column -->
+  <div class="card">
+    <div class="card-header">
+      Local Files
+      <span class="count" id="localCount">0</span>
+    </div>
+    <div class="local-list" id="localList">
+      <div class="empty-state">No local files found</div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  let refreshTimer = null;
+
+  async function refresh() {
+    try {
+      const res = await fetch('/api/queue');
+      if (!res.ok) return;
+      const data = await res.json();
+      renderState(data);
+    } catch (e) { /* ignore */ }
+  }
+
+  function renderState(data) {
+    // status pill
+    const pill = document.getElementById('statusPill');
+    const state = data.state || 'stopped';
+    pill.className = 'status-pill ' + state;
+    pill.textContent = state.charAt(0).toUpperCase() + state.slice(1);
+
+    // now playing
+    const np = data.nowPlaying;
+    const isEmpty = !np || np.empty || (!np.title && !np.artists);
+    document.getElementById('npEmpty').style.display = isEmpty ? '' : 'none';
+    document.getElementById('npTitle').style.display = isEmpty ? 'none' : '';
+    document.getElementById('npArtists').style.display = isEmpty ? 'none' : '';
+    if (!isEmpty) {
+      document.getElementById('npTitle').textContent = np.title || np.link || '';
+      document.getElementById('npArtists').textContent = np.artists || '';
+    }
+
+    // queue
+    const queue = data.queue || [];
+    document.getElementById('queueCount').textContent = queue.length;
+    const list = document.getElementById('queueList');
+    if (queue.length === 0) {
+      list.innerHTML = '<div class="empty-state">Queue is empty</div>';
+    } else {
+      list.innerHTML = queue.map((t, i) => `
+        <div class="track-item">
+          <span class="track-num">${i + 1}</span>
+          <div class="track-info">
+            <div class="track-title">${esc(t.title || t.link)}</div>
+            ${t.artists ? `<div class="track-artist">${esc(t.artists)}</div>` : ''}
+          </div>
+          <button class="track-remove" onclick="removeTrack(${i})" title="Remove">×</button>
+        </div>
+      `).join('');
+    }
+  }
+
+  async function loadLocalFiles() {
+    try {
+      const res = await fetch('/api/local-files');
+      if (!res.ok) return;
+      const data = await res.json();
+      const files = data.files || [];
+      document.getElementById('localCount').textContent = files.length;
+      const list = document.getElementById('localList');
+      if (files.length === 0) {
+        list.innerHTML = '<div class="empty-state">No local files found</div>';
+      } else {
+        list.innerHTML = files.map(f => `
+          <div class="file-item">
+            <span class="file-num">${f.index}</span>
+            <span class="file-name" title="${esc(f.name)}">${esc(f.name)}</span>
+            <button class="file-add" onclick="addLocal(${f.index})">+ Add</button>
+          </div>
+        `).join('');
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  async function addUrl() {
+    const input = document.getElementById('urlInput');
+    const url = input.value.trim();
+    if (!url) return;
+    try {
+      const res = await fetch('/api/queue/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+      });
+      if (res.ok) {
+        input.value = '';
+        toast('Added to queue', 'ok');
+        refresh();
+      } else {
+        toast('Failed to add', 'err');
+      }
+    } catch (e) { toast('Error', 'err'); }
+  }
+
+  async function addLocal(index) {
+    try {
+      const res = await fetch('/api/queue/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ local: index })
+      });
+      if (res.ok) { toast('Added to queue', 'ok'); refresh(); }
+      else toast('Failed to add', 'err');
+    } catch (e) { toast('Error', 'err'); }
+  }
+
+  async function removeTrack(index) {
+    try {
+      const res = await fetch('/api/queue/' + index, { method: 'DELETE' });
+      if (res.ok) { refresh(); }
+      else toast('Failed to remove', 'err');
+    } catch (e) { toast('Error', 'err'); }
+  }
+
+  async function ctrl(action) {
+    try {
+      await fetch('/api/queue/' + action, { method: 'POST' });
+      setTimeout(refresh, 400);
+    } catch (e) { toast('Error', 'err'); }
+  }
+
+  let toastTimer = null;
+  function toast(msg, type) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = 'toast show ' + (type || '');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.className = 'toast'; }, 2500);
+  }
+
+  function esc(s) {
+    if (!s) return '';
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // init
+  refresh();
+  loadLocalFiles();
+  refreshTimer = setInterval(refresh, 3000);
+</script>
+</body>
+</html>

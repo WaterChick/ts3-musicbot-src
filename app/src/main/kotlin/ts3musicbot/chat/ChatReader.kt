@@ -63,6 +63,8 @@ class ChatReader(
     @Volatile
     private var songQueue = SongQueue(botSettings, client, spotify, soundCloud, youTube, bandcamp, this)
 
+    fun getSongQueue(): SongQueue = songQueue
+
     init {
         // initialise spotify token
         CoroutineScope(IO).launch {

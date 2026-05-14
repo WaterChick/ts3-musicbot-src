@@ -379,6 +379,9 @@ class Main :
                                 )
                             if (chatReader.startReading()) {
                                 println("Bot ${botSettings.nickname} started listening to the chat in channel ${botSettings.channelName}.")
+                                BotState.chatReader = chatReader
+                                BotState.commandList = commandList
+                                WebServer.start()
                                 val console =
                                     Console(
                                         commandList,
@@ -425,6 +428,9 @@ class Main :
                             )
                         if (chatReader.startReading()) {
                             println("Bot ${botSettings.nickname} started listening to the chat in channel ${botSettings.channelName}.")
+                            BotState.chatReader = chatReader
+                            BotState.commandList = commandList
+                            WebServer.start()
                             val console =
                                 Console(
                                     commandList,
@@ -1056,6 +1062,9 @@ class Main :
                                 )
                             if (chatReader.startReading()) {
                                 println("Bot ${settings.nickname} started listening to the chat in channel ${settings.channelName}.")
+                                BotState.chatReader = chatReader
+                                BotState.commandList = commandList
+                                WebServer.start()
                                 val console =
                                     Console(
                                         commandList,
@@ -1110,6 +1119,9 @@ class Main :
                             )
                         if (chatReader.startReading()) {
                             println("Bot ${settings.nickname} started listening to the chat in channel ${settings.channelName}.")
+                            BotState.chatReader = chatReader
+                            BotState.commandList = commandList
+                            WebServer.start()
                             val console =
                                 Console(
                                     commandList,
