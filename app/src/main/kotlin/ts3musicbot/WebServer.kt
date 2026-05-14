@@ -6,11 +6,14 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.net.InetSocketAddress
+import java.util.Base64
 import java.util.concurrent.Executors
 
 object WebServer {
     private const val PORT = 8090
     private var server: HttpServer? = null
+    private val webUser: String? = System.getenv("WEB_USER")?.takeIf { it.isNotBlank() }
+    private val webPass: String? = System.getenv("WEB_PASS")?.takeIf { it.isNotBlank() }
 
     fun start() {
         if (server != null) return
@@ -29,9 +32,31 @@ object WebServer {
         server?.stop(0)
     }
 
+    // ── auth ─────────────────────────────────────────────────────────────
+
+    private fun HttpExchange.isAuthorized(): Boolean {
+        if (webUser == null || webPass == null) return true
+        val header = requestHeaders.getFirst("Authorization") ?: return false
+        if (!header.startsWith("Basic ")) return false
+        val decoded = runCatching {
+            String(Base64.getDecoder().decode(header.removePrefix("Basic ")))
+        }.getOrNull() ?: return false
+        val colon = decoded.indexOf(':')
+        if (colon < 0) return false
+        return decoded.substring(0, colon) == webUser && decoded.substring(colon + 1) == webPass
+    }
+
+    private fun HttpExchange.sendUnauthorized() {
+        responseHeaders.add("WWW-Authenticate", "Basic realm=\"TS3 Music Bot\"")
+        val bytes = "Unauthorized".toByteArray(Charsets.UTF_8)
+        sendResponseHeaders(401, bytes.size.toLong())
+        responseBody.use { it.write(bytes) }
+    }
+
     // ── routing ──────────────────────────────────────────────────────────
 
     private fun handleQueue(ex: HttpExchange) {
+        if (!ex.isAuthorized()) { ex.sendUnauthorized(); return }
         val path = ex.requestURI.path
         val method = ex.requestMethod
         when {
@@ -50,6 +75,7 @@ object WebServer {
     }
 
     private fun handleVolume(ex: HttpExchange) {
+        if (!ex.isAuthorized()) { ex.sendUnauthorized(); return }
         when (ex.requestMethod) {
             "GET" -> ex.sendJson(JSONObject().put("volume", BotState.volume))
             "POST" -> {
@@ -68,6 +94,7 @@ object WebServer {
     }
 
     private fun handleLocalFiles(ex: HttpExchange) {
+        if (!ex.isAuthorized()) { ex.sendUnauthorized(); return }
         if (ex.requestMethod != "GET") { ex.sendError(405, "Method not allowed"); return }
         val dir = File(BotState.musicDir)
         val arr = JSONArray()
@@ -86,6 +113,7 @@ object WebServer {
     }
 
     private fun handleStatic(ex: HttpExchange) {
+        if (!ex.isAuthorized()) { ex.sendUnauthorized(); return }
         if (ex.requestMethod != "GET") { ex.sendError(405, "Method not allowed"); return }
         val html = WebServer::class.java.getResourceAsStream("/web/index.html")
             ?.readBytes()
