@@ -1,0 +1,44 @@
+name: Deploy
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Build JAR
+        run: ./gradlew shadowJar --no-daemon
+
+      - name: Push JAR to ts3-musicbot
+        env:
+          DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git clone https://x-access-token:${DEPLOY_TOKEN}@github.com/WaterChick/ts3-musicbot.git /tmp/deploy-repo
+          cp app/build/libs/ts3-musicbot.jar /tmp/deploy-repo/ts3-musicbot.jar
+          cd /tmp/deploy-repo
+          git add ts3-musicbot.jar
+          git diff --cached --quiet || git commit -m 'chore: update JAR from ${{ github.repository }}@${{ github.sha }}'
+          git push

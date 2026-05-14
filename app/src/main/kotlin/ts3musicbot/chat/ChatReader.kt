@@ -319,7 +319,7 @@ class ChatReader(
                                 (
                                     "^(${cmdList.commandList["queue-add"]}|${cmdList.commandList["queue-playnext"]})" +
                                         "(\\s+-\\w*(r|s|t|P|([lp]\\s*[0-9]+)))*(\\s*(\\[URL])?((spotify:(user:\\S+:)?" +
-                                        "(track|album|playlist|show|episode|artist):\\S+)|(https?://\\S+)|(file://\\S+)|(local:[0-9]+)|" +
+                                        "(track|album|playlist|show|episode|artist):\\S+)|(https?://\\S+)|(file://\\S+)|(local:([0-9]+-[0-9]+|[0-9]+|all))|" +
                                         "((sp|spotify|yt|youtube|sc|soundcloud|bc|bandcamp)\\s+" +
                                         "(track|album|playlist|show|episode|artist|video|user)\\s+.+))(\\[/URL])?" +
                                         "\\s*,?\\s*)+(\\s+-\\w*(r|s|t|P|([lp]\\s*[0-9]+)))*\$"
@@ -512,7 +512,7 @@ class ChatReader(
                                                     "soundcloud\\.com|((m|www)\\.)?youtu\\.?be(\\.com)?|\\S*\\.?bandcamp\\.com\\S*))" +
                                                     "|song\\.link/" +
                                                     "|(music|itunes)\\.apple\\.com/" +
-                                                    ".+(\\[/URL])?)|(spotify:(track|album|playlist|show|episode|artist):.+)|(file://\\S+)|(local:[0-9]+)"
+                                                    ".+(\\[/URL])?)|(spotify:(track|album|playlist|show|episode|artist):.+)|(file://\\S+)|(local:([0-9]+-[0-9]+|[0-9]+|all))"
                                             ).toRegex(),
                                         )
                                     ) {
@@ -556,31 +556,49 @@ class ChatReader(
 
                                     // Handle local file directly
                                     if (rawLink.serviceType() == ServiceType.LOCAL) {
-                                        val resolvedLink = if (rawLink.link.matches("local:[0-9]+".toRegex())) {
-                                            val idx = rawLink.link.substringAfter("local:").toIntOrNull() ?: 0
-                                            val dir = java.io.File("/data/music")
-                                            val files = dir.listFiles()?.filter {
-                                                it.isFile && listOf("mp3", "wav", "flac", "ogg", "aac", "m4a", "opus")
-                                                    .any { ext -> it.name.lowercase().endsWith(".$ext") }
-                                            }?.sortedBy { it.name } ?: emptyList()
-                                            if (idx < 1 || idx > files.size) {
-                                                printToChat(listOf("No file at index $idx. Use %local-list to see available files."))
-                                                commandSuccessful.add(Pair(false, Pair("Invalid index.", null)))
-                                                continue
+                                        val dir = java.io.File("/data/music")
+                                        val allFiles = dir.listFiles()?.filter {
+                                            it.isFile && listOf("mp3", "wav", "flac", "ogg", "aac", "m4a", "opus")
+                                                .any { ext -> it.name.lowercase().endsWith(".$ext") }
+                                        }?.sortedBy { it.name } ?: emptyList()
+                                        val filesToAdd: List<java.io.File> = when {
+                                            rawLink.link == "local:all" -> allFiles
+                                            rawLink.link.matches("local:[0-9]+-[0-9]+".toRegex()) -> {
+                                                val parts = rawLink.link.substringAfter("local:").split("-")
+                                                val from = parts[0].toIntOrNull() ?: 1
+                                                val to = parts[1].toIntOrNull() ?: allFiles.size
+                                                if (from < 1 || to > allFiles.size || from > to) {
+                                                    printToChat(listOf("Invalid range local:$from-$to. ${allFiles.size} files available. Use %local-list."))
+                                                    commandSuccessful.add(Pair(false, Pair("Invalid range.", null)))
+                                                    continue
+                                                }
+                                                allFiles.subList(from - 1, to)
                                             }
-                                            Link(java.net.URI("file", null, files[idx - 1].absolutePath, null).toString())
-                                        } else { link }
-                                        val filename = resolvedLink.link.substringAfterLast("/")
-                                        val localTrack = Track(
-                                            title = Name(filename),
-                                            link = resolvedLink,
-                                            playability = Playability(isPlayable = true),
-                                        )
-                                        val trackAdded = songQueue.addToQueue(localTrack, customPosition)
-                                        val msg = if (trackAdded) trackAddedMsg else tracksAddingErrorMsg
-                                        commandListener.onCommandProgress(commandString, msg, localTrack)
-                                        commandSuccessful.add(Pair(trackAdded, Pair(msg, localTrack)))
-                                        continue
+                                            else -> {
+                                                val idx = rawLink.link.substringAfter("local:").toIntOrNull() ?: 0
+                                                if (idx < 1 || idx > allFiles.size) {
+                                                    printToChat(listOf("No file at index $idx. Use %local-list to see available files."))
+                                                    commandSuccessful.add(Pair(false, Pair("Invalid index.", null)))
+                                                    continue
+                                                }
+                                                listOf(allFiles[idx - 1])
+                                            }
+                                        }
+                                        var allAdded = true
+                                        for (file in filesToAdd) {
+                                            val fileUri = Link(java.net.URI("file", null, file.absolutePath, null).toString())
+                                            val localTrack = Track(
+                                                title = Name(file.name),
+                                                link = fileUri,
+                                                playability = Playability(isPlayable = true),
+                                            )
+                                            val trackAdded = songQueue.addToQueue(localTrack, customPosition)
+                                            if (!trackAdded) allAdded = false
+                                            val msg = if (trackAdded) trackAddedMsg else tracksAddingErrorMsg
+                                            commandListener.onCommandProgress(commandString, msg, localTrack)
+                                        }
+                                        commandSuccessful.add(Pair(allAdded, Pair(if (allAdded) trackAddedMsg else tracksAddingErrorMsg, null)))
+                                    continue
                                     }
 
 
