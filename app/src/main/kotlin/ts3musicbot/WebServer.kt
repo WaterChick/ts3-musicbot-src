@@ -69,6 +69,7 @@ object WebServer {
             path == "/api/queue/stop" && method == "POST" -> controlQueue(ex) { sq -> sq.stopQueue() }
             path == "/api/queue/clear" && method == "POST" -> controlQueue(ex) { sq -> sq.clearQueue() }
             path == "/api/queue/shuffle" && method == "POST" -> controlQueue(ex) { sq -> sq.shuffleQueue() }
+            path == "/api/queue/reorder" && method == "POST" -> reorderTrack(ex)
             path.startsWith("/api/queue/move-top/") && method == "POST" -> moveTrackToTop(ex, path)
             path.startsWith("/api/queue/") && method == "DELETE" -> deleteTrack(ex, path)
             else -> ex.sendError(404, "Not found")
@@ -178,6 +179,19 @@ object WebServer {
         val sq = BotState.getSongQueue()
             ?: run { ex.sendError(503, "Bot not ready"); return }
         sq.deleteTrack(index)
+        ex.sendJson(JSONObject().put("ok", true))
+    }
+
+    private fun reorderTrack(ex: HttpExchange) {
+        val body = ex.requestBody.readBytes().toString(Charsets.UTF_8)
+        val json = runCatching { JSONObject(body) }.getOrNull()
+            ?: run { ex.sendError(400, "Invalid JSON"); return }
+        val from = json.optInt("from", -1)
+        val to = json.optInt("to", -1)
+        if (from < 0 || to < 0) { ex.sendError(400, "Invalid from/to"); return }
+        val sq = BotState.getSongQueue()
+            ?: run { ex.sendError(503, "Bot not ready"); return }
+        sq.reorderTrack(from, to)
         ex.sendJson(JSONObject().put("ok", true))
     }
 

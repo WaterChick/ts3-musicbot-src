@@ -152,44 +152,62 @@
   .add-form input::placeholder { color: var(--muted); }
   .add-form input:focus { border-color: var(--accent); }
 
-  /* ── queue list ── */
-  .queue-list { max-height: 520px; overflow-y: auto; }
-  .queue-list::-webkit-scrollbar { width: 6px; }
-  .queue-list::-webkit-scrollbar-track { background: transparent; }
-  .queue-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-
-  .track-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 16px;
-    border-bottom: 1px solid var(--border);
-    transition: background 0.1s;
+  /* ── queue grid ── */
+  .queue-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    padding: 12px;
+    max-height: 520px;
+    overflow-y: auto;
   }
-  .track-item:last-child { border-bottom: none; }
-  .track-item:hover { background: var(--surface2); }
-  .track-num { color: var(--muted); font-size: 12px; width: 22px; flex-shrink: 0; text-align: right; }
-  .track-info { flex: 1; min-width: 0; }
-  .track-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
-  .track-artist { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .track-remove, .track-move-top {
+  .queue-grid::-webkit-scrollbar { width: 6px; }
+  .queue-grid::-webkit-scrollbar-track { background: transparent; }
+  .queue-grid::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .queue-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    cursor: grab;
+    position: relative;
+    user-select: none;
+    transition: border-color 0.15s, opacity 0.15s, background 0.15s;
+    min-width: 0;
+  }
+  .queue-card:active { cursor: grabbing; }
+  .queue-card:hover { border-color: #3a3a3a; background: #202020; }
+  .queue-card.dragging { opacity: 0.35; }
+  .queue-card.drag-over { border-color: var(--accent); background: rgba(124,92,191,0.1); }
+
+  .card-num { color: var(--muted); font-size: 11px; margin-bottom: 3px; }
+  .card-title { font-weight: 500; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 40px; }
+  .card-artist { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+
+  .card-actions {
+    position: absolute;
+    top: 6px; right: 6px;
+    display: flex;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .queue-card:hover .card-actions { opacity: 1; }
+
+  .card-btn {
     background: none;
     border: none;
     color: var(--muted);
     cursor: pointer;
-    font-size: 15px;
-    padding: 2px 6px;
+    font-size: 14px;
+    padding: 2px 5px;
     border-radius: 4px;
     transition: all 0.15s;
-    flex-shrink: 0;
     line-height: 1;
   }
-  .track-remove:hover { color: var(--danger); background: rgba(192,57,43,0.1); }
-  .track-move-top { display: none; }
-  .track-move-top:hover { color: var(--accent-h); background: rgba(124,92,191,0.15); }
-  .track-item { cursor: pointer; }
-  .track-item.selected { background: var(--surface2); }
-  .track-item.selected .track-move-top { display: block; }
+  .card-btn.remove:hover { color: var(--danger); background: rgba(192,57,43,0.12); }
+  .card-btn.top:hover { color: var(--accent-h); background: rgba(124,92,191,0.15); }
 
   .empty-state {
     padding: 32px 16px;
@@ -339,8 +357,8 @@
           <span class="count" id="queueCount">0</span>
         </div>
       </div>
-      <div class="queue-list" id="queueList">
-        <div class="empty-state">Queue is empty</div>
+      <div class="queue-grid" id="queueList">
+        <div class="empty-state" style="grid-column:1/-1">Queue is empty</div>
       </div>
     </div>
 
@@ -362,7 +380,6 @@
 
 <script>
   let refreshTimer = null;
-  let selectedIdx = null;
   let isDraggingVol = false;
   let volTimer = null;
   let lastQueueSize = 0;
@@ -371,7 +388,7 @@
   async function refresh() {
     try {
       const [qRes, vRes] = await Promise.all([fetch('/api/queue'), fetch('/api/volume')]);
-      if (qRes.ok) renderState(await qRes.json());
+      if (qRes.ok && !isDragging) renderState(await qRes.json());
       if (vRes.ok && !isDraggingVol) {
         const { volume } = await vRes.json();
         document.getElementById('volSlider').value = volume;
@@ -416,24 +433,24 @@
 
     const list = document.getElementById('queueList');
     if (queue.length === 0) {
-      list.innerHTML = '<div class="empty-state">Queue is empty</div>';
-      selectedIdx = null;
+      list.innerHTML = '<div class="empty-state" style="grid-column:1/-1">Queue is empty</div>';
     } else {
       list.innerHTML = queue.map((t, i) => `
-        <div class="track-item" onclick="selectTrack(event,${i})">
-          <span class="track-num">${i + 1}</span>
-          <div class="track-info">
-            <div class="track-title">${esc(t.title || t.link)}</div>
-            ${t.artists ? `<div class="track-artist">${esc(t.artists)}</div>` : ''}
+        <div class="queue-card"
+             draggable="true"
+             ondragstart="onDragStart(event,${i})"
+             ondragend="onDragEnd(event)"
+             ondragover="onDragOver(event,${i})"
+             ondrop="onDrop(event,${i})">
+          <div class="card-actions">
+            ${i > 0 ? `<button class="card-btn top" onclick="moveToTop(${i})" title="Move to top">⬆</button>` : ''}
+            <button class="card-btn remove" onclick="removeTrack(${i})" title="Remove">×</button>
           </div>
-          ${i > 0 ? `<button class="track-move-top" onclick="event.stopPropagation();moveToTop(${i})" title="Move to top">⬆</button>` : ''}
-          <button class="track-remove" onclick="event.stopPropagation();removeTrack(${i})" title="Remove">×</button>
+          <div class="card-num">${i + 1}</div>
+          <div class="card-title">${esc(t.title || t.link)}</div>
+          ${t.artists ? `<div class="card-artist">${esc(t.artists)}</div>` : ''}
         </div>
       `).join('');
-      if (selectedIdx !== null) {
-        const items = list.querySelectorAll('.track-item');
-        if (items[selectedIdx]) items[selectedIdx].classList.add('selected');
-      }
     }
   }
 
@@ -502,16 +519,45 @@
     ctrl('clear');
   }
 
-  function selectTrack(e, index) {
-    if (e.target.closest('button')) return;
-    if (selectedIdx === index) {
-      selectedIdx = null;
-      e.currentTarget.classList.remove('selected');
-    } else {
-      document.querySelectorAll('.track-item.selected').forEach(el => el.classList.remove('selected'));
-      selectedIdx = index;
-      e.currentTarget.classList.add('selected');
-    }
+  // ── drag and drop ──────────────────────────────────────────────────
+  let dragSrcIdx = null;
+  let isDragging = false;
+
+  function onDragStart(e, index) {
+    dragSrcIdx = index;
+    isDragging = true;
+    e.currentTarget.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+  }
+
+  function onDragEnd(e) {
+    isDragging = false;
+    dragSrcIdx = null;
+    document.querySelectorAll('.queue-card').forEach(c => c.classList.remove('dragging', 'drag-over'));
+  }
+
+  function onDragOver(e, index) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    document.querySelectorAll('.queue-card').forEach(c => c.classList.remove('drag-over'));
+    if (index !== dragSrcIdx) e.currentTarget.classList.add('drag-over');
+  }
+
+  async function onDrop(e, toIndex) {
+    e.preventDefault();
+    const from = dragSrcIdx;
+    isDragging = false;
+    dragSrcIdx = null;
+    document.querySelectorAll('.queue-card').forEach(c => c.classList.remove('dragging', 'drag-over'));
+    if (from === null || from === toIndex) return;
+    try {
+      await fetch('/api/queue/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from, to: toIndex })
+      });
+      refresh();
+    } catch (e) { toast('Error', 'err'); }
   }
 
   async function moveToTop(index) {

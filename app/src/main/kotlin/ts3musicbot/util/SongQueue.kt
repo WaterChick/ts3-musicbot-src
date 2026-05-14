@@ -230,6 +230,14 @@ class SongQueue(
         }
     }
 
+    fun reorderTrack(from: Int, to: Int) {
+        synchronized(songQueue) {
+            if (from < 0 || from >= songQueue.size || to < 0 || to >= songQueue.size || from == to) return
+            val track = songQueue.removeAt(from)
+            songQueue.add(to, track)
+        }
+    }
+
     fun setVolume(v: Int) {
         BotState.volume = v.coerceIn(0, 130)
         try {
