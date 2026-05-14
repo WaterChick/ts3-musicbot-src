@@ -301,7 +301,7 @@ class SongQueue(
                                         "Check if a newer version of youtube-dl is available and update it " +
                                         "to the latest one if you already haven't.",
                                 )
-                                songQueue.removeFirst()
+                                songQueue.removeAt(0)
                                 if (songQueue.isNotEmpty()) {
                                     firstTrack = songQueue.first()
                                 } else {
@@ -408,7 +408,7 @@ class SongQueue(
         fun getPlayer() =
             when (track.link.serviceType()) {
                 ServiceType.SPOTIFY -> botSettings.spotifyPlayer
-                ServiceType.YOUTUBE, ServiceType.SOUNDCLOUD, ServiceType.BANDCAMP -> "mpv"
+                ServiceType.YOUTUBE, ServiceType.SOUNDCLOUD, ServiceType.BANDCAMP, ServiceType.LOCAL -> "mpv"
                 else -> ""
             }
 
@@ -911,6 +911,39 @@ class SongQueue(
                         }
                     }
 
+                    ServiceType.LOCAL -> {
+                        val localPath = try {
+                            java.net.URI(track.link.link).path
+                        } catch (e: Exception) {
+                            track.link.link.removePrefix("file://")
+                        }
+                        val mpvLocalRunnable =
+                            Runnable {
+                                commandRunner.runCommand(
+                                    "mpv --terminal=no --no-video \"$localPath\" --volume=100 &",
+                                    inheritIO = true,
+                                    ignoreOutput = true,
+                                    printCommand = true,
+                                )
+                            }
+                        withContext(IO + trackJob) {
+                            mpvLocalRunnable.run()
+                            var attempts = 0
+                            while (trackJob.isActive && !processRunning()) {
+                                if (attempts < 20) {
+                                    delay(1000)
+                                    attempts++
+                                } else {
+                                    attempts = 0
+                                    killPlayer("mpv")
+                                    delay(1000)
+                                    mpvLocalRunnable.run()
+                                }
+                            }
+                        }
+                        delay(3000)
+                    }
+
                     else -> {
                         println("Error: ${track.link} is not a supported link type!")
                         synchronized(songQueue) {
@@ -1025,7 +1058,8 @@ class SongQueue(
                                 }
                             }
 
-                            else -> {
+
+                    else -> {
                                 if (status.errorText != "Error org.freedesktop.DBus.Error.ServiceUnknown: " +
                                     "The name org.mpris.MediaPlayer2.${getPlayer()} was not provided by any .service files"
                                 ) {

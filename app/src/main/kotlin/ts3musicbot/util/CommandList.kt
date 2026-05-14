@@ -24,6 +24,7 @@ data class CommandList(
             Pair("queue-resume", "%queue-resume"),
             Pair("queue-repeat", "%queue-repeat"),
             Pair("info", "%info"),
+            Pair("local-list", "%local-list"),
             Pair("search", "%search"),
             Pair("goto", "%goto"),
             Pair("return", "%return"),
@@ -81,6 +82,7 @@ data class CommandList(
                     "${commandList["queue-repeat"]} <amount>                       -Adds the currently playing song to the top of the queue. <amount> is how many times the song should be queued.\n" +
                     "${commandList["search"]} <service> <type> <text> <limit>      -Search on SoundCloud, Spotify, YouTube or Bandcamp. Shows 10 first results by default. <type> can be track, video, playlist or channel. You can set the amount of results with the -l/--limit flag.\n" +
                     "${commandList["info"]} <link/search query>                    -Shows info on the given search query or link(s). <link> can be one or more Spotify, YouTube or SoundCloud links, separated by a comma.\n" +
+                    "${commandList["local-list"]} [directory]                     -Lists audio files in /data/music (numbered). Play with: ${commandList["queue-add"]} local:1\n" +
                     "${commandList["goto"]} <channelpath> -p <channelpassword>     -Move the bot to a different channel.\n" +
                     "${commandList["return"]}                                      -Return the bot back to the original channel.\n" +
                     "\n\n" +

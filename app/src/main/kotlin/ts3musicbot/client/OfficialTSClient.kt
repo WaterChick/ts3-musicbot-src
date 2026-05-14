@@ -97,7 +97,7 @@ class OfficialTSClient(botSettings: BotSettings) : Client(botSettings) {
             val subChannels = channelName.split('/')
             val channelPath = ArrayList<String>()
             channelPath.addAll(subChannels.reversed())
-            channelPath.removeFirst()
+            channelPath.removeAt(0)
 
             var pid = channelData.substringAfter("pid=").substringBefore(" ")
             while (channelPath.isNotEmpty()) {
@@ -111,7 +111,7 @@ class OfficialTSClient(botSettings: BotSettings) : Client(botSettings) {
                 ) = getChannelName(pid) == encode(name)
                 if (checkPid(pid, channelPath.first())) {
                     pid = getChannelList().first { it.contains("cid=$pid(\\s+|$)".toRegex()) }.substringAfter("pid=").substringBefore(' ')
-                    channelPath.removeFirst()
+                    channelPath.removeAt(0)
                 } else {
                     continue@channelLoop
                 }

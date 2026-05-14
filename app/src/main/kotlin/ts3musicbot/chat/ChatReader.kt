@@ -35,6 +35,8 @@ import ts3musicbot.util.SearchResult
 import ts3musicbot.util.SearchResults
 import ts3musicbot.util.SearchType
 import ts3musicbot.util.SongQueue
+import ts3musicbot.util.Name
+import ts3musicbot.util.Playability
 import ts3musicbot.util.Track
 import ts3musicbot.util.TrackList
 import ts3musicbot.util.playerctl
@@ -317,7 +319,7 @@ class ChatReader(
                                 (
                                     "^(${cmdList.commandList["queue-add"]}|${cmdList.commandList["queue-playnext"]})" +
                                         "(\\s+-\\w*(r|s|t|P|([lp]\\s*[0-9]+)))*(\\s*(\\[URL])?((spotify:(user:\\S+:)?" +
-                                        "(track|album|playlist|show|episode|artist):\\S+)|(https?://\\S+)|" +
+                                        "(track|album|playlist|show|episode|artist):\\S+)|(https?://\\S+)|(file://\\S+)|(local:[0-9]+)|" +
                                         "((sp|spotify|yt|youtube|sc|soundcloud|bc|bandcamp)\\s+" +
                                         "(track|album|playlist|show|episode|artist|video|user)\\s+.+))(\\[/URL])?" +
                                         "\\s*,?\\s*)+(\\s+-\\w*(r|s|t|P|([lp]\\s*[0-9]+)))*\$"
@@ -510,7 +512,7 @@ class ChatReader(
                                                     "soundcloud\\.com|((m|www)\\.)?youtu\\.?be(\\.com)?|\\S*\\.?bandcamp\\.com\\S*))" +
                                                     "|song\\.link/" +
                                                     "|(music|itunes)\\.apple\\.com/" +
-                                                    ".+(\\[/URL])?)|(spotify:(track|album|playlist|show|episode|artist):.+)"
+                                                    ".+(\\[/URL])?)|(spotify:(track|album|playlist|show|episode|artist):.+)|(file://\\S+)|(local:[0-9]+)"
                                             ).toRegex(),
                                         )
                                     ) {
@@ -543,6 +545,7 @@ class ChatReader(
                                             ServiceType.BANDCAMP -> bandcamp
                                             ServiceType.SONGLINK -> songLink
                                             ServiceType.APPLE_MUSIC -> appleMusic
+                                            ServiceType.LOCAL -> Service()
                                             ServiceType.OTHER -> Service()
                                         }
 
@@ -550,6 +553,36 @@ class ChatReader(
                                     // Remove tracking stuff & other junk from the link
                                     val link = rawLink.clean(service)
                                     println("Cleaned Link: $link")
+
+                                    // Handle local file directly
+                                    if (rawLink.serviceType() == ServiceType.LOCAL) {
+                                        val resolvedLink = if (rawLink.link.matches("local:[0-9]+".toRegex())) {
+                                            val idx = rawLink.link.substringAfter("local:").toIntOrNull() ?: 0
+                                            val dir = java.io.File("/data/music")
+                                            val files = dir.listFiles()?.filter {
+                                                it.isFile && listOf("mp3", "wav", "flac", "ogg", "aac", "m4a", "opus")
+                                                    .any { ext -> it.name.lowercase().endsWith(".$ext") }
+                                            }?.sortedBy { it.name } ?: emptyList()
+                                            if (idx < 1 || idx > files.size) {
+                                                printToChat(listOf("No file at index $idx. Use %local-list to see available files."))
+                                                commandSuccessful.add(Pair(false, Pair("Invalid index.", null)))
+                                                continue
+                                            }
+                                            Link(java.net.URI("file", null, files[idx - 1].absolutePath, null).toString())
+                                        } else { link }
+                                        val filename = resolvedLink.link.substringAfterLast("/")
+                                        val localTrack = Track(
+                                            title = Name(filename),
+                                            link = resolvedLink,
+                                            playability = Playability(isPlayable = true),
+                                        )
+                                        val trackAdded = songQueue.addToQueue(localTrack, customPosition)
+                                        val msg = if (trackAdded) trackAddedMsg else tracksAddingErrorMsg
+                                        commandListener.onCommandProgress(commandString, msg, localTrack)
+                                        commandSuccessful.add(Pair(trackAdded, Pair(msg, localTrack)))
+                                        continue
+                                    }
+
 
                                     val id = link.getId(service)
                                     if (trackCache.any { it.first == link }) {
@@ -2159,7 +2192,36 @@ class ChatReader(
                                 commandJob.complete()
                                 return Pair(success, links)
                             }
-                            // goto command
+                            // local-list command
+                            commandString.contains("^${cmdList.commandList["local-list"]}".toRegex()) -> {
+                                val dir = if (commandString.length > cmdList.commandList["local-list"]!!.length + 1) {
+                                    commandString.substringAfter("${cmdList.commandList["local-list"]} ").trim()
+                                } else {
+                                    "/data/music"
+                                }
+                                val result = java.io.File(dir).let { d ->
+                                    if (d.exists() && d.isDirectory) {
+                                        val files = d.listFiles()?.filter {
+                                            it.isFile && listOf("mp3", "wav", "flac", "ogg", "aac", "m4a", "opus")
+                                                .any { ext -> it.name.lowercase().endsWith(".$ext") }
+                                        }?.sortedBy { it.name } ?: emptyList()
+                                        if (files.isEmpty()) {
+                                            "No audio files in $dir. Upload MP3 files to /data/music."
+                                        } else {
+                                            buildString {
+                                                appendLine("Audio files in $dir:")
+                                                files.forEachIndexed { i, f ->
+                                                    appendLine("${i+1}. ${f.name}  -> ${cmdList.commandList["queue-add"]} local:${i+1}")
+                                                }
+                                            }.trimEnd()
+                                        }
+                                    } else {
+                                        "Directory not found: $dir"
+                                    }
+                                }
+                                printToChat(listOf(result))
+                            }
+                                                        // goto command
                             commandString.contains("^${cmdList.commandList["goto"]}\\s+\\S+".toRegex()) -> {
                                 val password =
                                     if (commandString.contains("-p\\s+\\S+".toRegex())) {

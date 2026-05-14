@@ -114,7 +114,7 @@ class TeamSpeak(botSettings: BotSettings) : Client(botSettings), TS3Listener {
             val subChannels = channelName.split("/")
             val channelPath = ArrayList<String>()
             channelPath.addAll(subChannels.reversed())
-            channelPath.removeFirst()
+            channelPath.removeAt(0)
 
             var pid = channelData.parentChannelId
             while (channelPath.isNotEmpty()) {
@@ -126,7 +126,7 @@ class TeamSpeak(botSettings: BotSettings) : Client(botSettings), TS3Listener {
                 ) = getChannelName(pid) == name
                 if (checkPid(pid, channelPath.first())) {
                     pid = channelList.first { it.id == pid }.parentChannelId
-                    channelPath.removeFirst()
+                    channelPath.removeAt(0)
                 } else {
                     continue@channelLoop
                 }

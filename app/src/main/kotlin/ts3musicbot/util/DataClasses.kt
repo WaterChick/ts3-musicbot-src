@@ -199,6 +199,8 @@ data class Link(
 ) {
     fun serviceType() =
         when {
+            link.matches("local:[0-9]+".toRegex()) -> ServiceType.LOCAL
+            (link.startsWith("file://") || listOf(".mp3", ".wav", ".flac", ".ogg", ".aac", ".m4a", ".opus").any { link.lowercase().endsWith(it) }) -> ServiceType.LOCAL
             link.contains("\\S+soundcloud\\S+".toRegex()) -> ServiceType.SOUNDCLOUD
             link.contains("spotify") -> ServiceType.SPOTIFY
             link.contains("\\S+youtu\\.?be\\S+".toRegex()) -> ServiceType.YOUTUBE
@@ -356,6 +358,8 @@ data class Link(
                 ServiceType.SONGLINK -> {
                     this@Link.link
                 }
+
+                ServiceType.LOCAL -> this@Link.link
 
                 ServiceType.OTHER -> ""
             }
