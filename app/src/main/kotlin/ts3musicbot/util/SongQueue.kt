@@ -7,6 +7,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import ts3musicbot.BotState
 import ts3musicbot.client.OfficialTSClient
 import ts3musicbot.services.Bandcamp
 import ts3musicbot.services.Service
@@ -15,6 +16,9 @@ import ts3musicbot.services.SoundCloud
 import ts3musicbot.services.Spotify
 import ts3musicbot.services.YouTube
 import java.io.File
+import java.net.UnixDomainSocketAddress
+import java.nio.ByteBuffer
+import java.nio.channels.SocketChannel
 import java.util.Collections
 import kotlin.collections.ArrayList
 
@@ -215,6 +219,25 @@ class SongQueue(
     }
 
     fun getQueue(): ArrayList<Track> = synchronized(songQueue) { songQueue }.toMutableList() as ArrayList<Track>
+
+    fun moveToTop(index: Int) {
+        synchronized(songQueue) {
+            if (index > 0 && index < songQueue.size) {
+                val track = songQueue.removeAt(index)
+                songQueue.add(0, track)
+            }
+        }
+    }
+
+    fun setVolume(v: Int) {
+        BotState.volume = v.coerceIn(0, 130)
+        try {
+            val addr = UnixDomainSocketAddress.of("/tmp/mpv-ipc.sock")
+            val ch = SocketChannel.open(addr)
+            ch.write(ByteBuffer.wrap("{\"command\":[\"set_property\",\"volume\",${BotState.volume}]}\n".toByteArray()))
+            ch.close()
+        } catch (_: Exception) { }
+    }
 
     fun nowPlaying(): Track = getCurrent()
 
@@ -825,22 +848,12 @@ class SongQueue(
 
                     ServiceType.YOUTUBE, ServiceType.SOUNDCLOUD, ServiceType.BANDCAMP -> {
                         suspend fun startMPV(job: Job) {
-                            val volume: Int
                             var service = Service()
                             when (type) {
-                                ServiceType.SOUNDCLOUD -> {
-                                    volume = botSettings.scVolume
-                                    service = soundCloud
-                                }
-                                ServiceType.YOUTUBE -> {
-                                    volume = botSettings.ytVolume
-                                    service = youTube
-                                }
-                                ServiceType.BANDCAMP -> {
-                                    volume = botSettings.bcVolume
-                                    service = bandcamp
-                                }
-                                else -> volume = 100
+                                ServiceType.SOUNDCLOUD -> service = soundCloud
+                                ServiceType.YOUTUBE -> service = youTube
+                                ServiceType.BANDCAMP -> service = bandcamp
+                                else -> { }
                             }
 
                             val mpvRunnable =
@@ -853,7 +866,8 @@ class SongQueue(
                                             } else {
                                                 ""
                                             } +
-                                            " --ytdl \"${track.link}\" --volume=$volume &",
+                                            " --ytdl \"${track.link}\" --volume=${BotState.volume}" +
+                                            " --input-ipc-server=/tmp/mpv-ipc.sock &",
                                         inheritIO = true,
                                         ignoreOutput = true,
                                         printCommand = true,
@@ -920,7 +934,8 @@ class SongQueue(
                         val mpvLocalRunnable =
                             Runnable {
                                 commandRunner.runCommand(
-                                    "mpv --terminal=no --no-video \"$localPath\" --volume=100 &",
+                                    "mpv --terminal=no --no-video \"$localPath\" --volume=${BotState.volume}" +
+                                        " --input-ipc-server=/tmp/mpv-ipc.sock &",
                                     inheritIO = true,
                                     ignoreOutput = true,
                                     printCommand = true,

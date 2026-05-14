@@ -17,6 +17,7 @@ object WebServer {
         server = HttpServer.create(InetSocketAddress("0.0.0.0", PORT), 0).apply {
             executor = Executors.newFixedThreadPool(4)
             createContext("/api/queue") { ex -> handleQueue(ex) }
+            createContext("/api/volume") { ex -> handleVolume(ex) }
             createContext("/api/local-files") { ex -> handleLocalFiles(ex) }
             createContext("/") { ex -> handleStatic(ex) }
             start()
@@ -42,8 +43,27 @@ object WebServer {
             path == "/api/queue/play" && method == "POST" -> controlQueue(ex) { sq -> sq.startQueue() }
             path == "/api/queue/stop" && method == "POST" -> controlQueue(ex) { sq -> sq.stopQueue() }
             path == "/api/queue/clear" && method == "POST" -> controlQueue(ex) { sq -> sq.clearQueue() }
+            path.startsWith("/api/queue/move-top/") && method == "POST" -> moveTrackToTop(ex, path)
             path.startsWith("/api/queue/") && method == "DELETE" -> deleteTrack(ex, path)
             else -> ex.sendError(404, "Not found")
+        }
+    }
+
+    private fun handleVolume(ex: HttpExchange) {
+        when (ex.requestMethod) {
+            "GET" -> ex.sendJson(JSONObject().put("volume", BotState.volume))
+            "POST" -> {
+                val body = ex.requestBody.readBytes().toString(Charsets.UTF_8)
+                val json = runCatching { JSONObject(body) }.getOrNull()
+                    ?: run { ex.sendError(400, "Invalid JSON"); return }
+                val v = json.optInt("volume", -1)
+                if (v !in 0..130) { ex.sendError(400, "volume must be 0-130"); return }
+                val sq = BotState.getSongQueue()
+                    ?: run { BotState.volume = v; ex.sendJson(JSONObject().put("ok", true).put("volume", v)); return }
+                sq.setVolume(v)
+                ex.sendJson(JSONObject().put("ok", true).put("volume", BotState.volume))
+            }
+            else -> ex.sendError(405, "Method not allowed")
         }
     }
 
@@ -129,6 +149,15 @@ object WebServer {
         val sq = BotState.getSongQueue()
             ?: run { ex.sendError(503, "Bot not ready"); return }
         sq.deleteTrack(index)
+        ex.sendJson(JSONObject().put("ok", true))
+    }
+
+    private fun moveTrackToTop(ex: HttpExchange, path: String) {
+        val index = path.substringAfterLast("/").toIntOrNull()
+            ?: run { ex.sendError(400, "Invalid index"); return }
+        val sq = BotState.getSongQueue()
+            ?: run { ex.sendError(503, "Bot not ready"); return }
+        sq.moveToTop(index)
         ex.sendJson(JSONObject().put("ok", true))
     }
 

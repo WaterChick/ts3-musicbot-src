@@ -172,12 +172,12 @@
   .track-info { flex: 1; min-width: 0; }
   .track-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
   .track-artist { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .track-remove {
+  .track-remove, .track-move-top {
     background: none;
     border: none;
     color: var(--muted);
     cursor: pointer;
-    font-size: 16px;
+    font-size: 15px;
     padding: 2px 6px;
     border-radius: 4px;
     transition: all 0.15s;
@@ -185,6 +185,11 @@
     line-height: 1;
   }
   .track-remove:hover { color: var(--danger); background: rgba(192,57,43,0.1); }
+  .track-move-top { display: none; }
+  .track-move-top:hover { color: var(--accent-h); background: rgba(124,92,191,0.15); }
+  .track-item { cursor: pointer; }
+  .track-item.selected { background: var(--surface2); }
+  .track-item.selected .track-move-top { display: block; }
 
   .empty-state {
     padding: 32px 16px;
@@ -223,6 +228,37 @@
     flex-shrink: 0;
   }
   .file-add:hover { border-color: var(--accent); color: var(--accent-h); }
+
+  /* ── volume ── */
+  .vol-control { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .vol-icon { color: var(--muted); font-size: 14px; }
+  .vol-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 90px;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+  }
+  .vol-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    background: var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+  }
+  .vol-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    background: var(--accent);
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+  }
+  .vol-val { color: var(--muted); font-size: 12px; width: 28px; text-align: right; }
 
   .toast {
     position: fixed;
@@ -273,6 +309,12 @@
       <button class="btn" onclick="ctrl('skip')">⏭ Skip</button>
       <button class="btn danger" onclick="ctrl('stop')">⏹ Stop</button>
     </div>
+    <div class="vol-control">
+      <span class="vol-icon">🔊</span>
+      <input type="range" id="volSlider" class="vol-slider" min="0" max="130" value="100"
+             oninput="onVolInput(this.value)">
+      <span class="vol-val" id="volVal">100</span>
+    </div>
   </div>
 </div>
 
@@ -316,13 +358,19 @@
 
 <script>
   let refreshTimer = null;
+  let selectedIdx = null;
+  let isDraggingVol = false;
+  let volTimer = null;
 
   async function refresh() {
     try {
-      const res = await fetch('/api/queue');
-      if (!res.ok) return;
-      const data = await res.json();
-      renderState(data);
+      const [qRes, vRes] = await Promise.all([fetch('/api/queue'), fetch('/api/volume')]);
+      if (qRes.ok) renderState(await qRes.json());
+      if (vRes.ok && !isDraggingVol) {
+        const { volume } = await vRes.json();
+        document.getElementById('volSlider').value = volume;
+        document.getElementById('volVal').textContent = volume;
+      }
     } catch (e) { /* ignore */ }
   }
 
@@ -350,17 +398,23 @@
     const list = document.getElementById('queueList');
     if (queue.length === 0) {
       list.innerHTML = '<div class="empty-state">Queue is empty</div>';
+      selectedIdx = null;
     } else {
       list.innerHTML = queue.map((t, i) => `
-        <div class="track-item">
+        <div class="track-item" onclick="selectTrack(event,${i})">
           <span class="track-num">${i + 1}</span>
           <div class="track-info">
             <div class="track-title">${esc(t.title || t.link)}</div>
             ${t.artists ? `<div class="track-artist">${esc(t.artists)}</div>` : ''}
           </div>
-          <button class="track-remove" onclick="removeTrack(${i})" title="Remove">×</button>
+          ${i > 0 ? `<button class="track-move-top" onclick="event.stopPropagation();moveToTop(${i})" title="Move to top">⬆</button>` : ''}
+          <button class="track-remove" onclick="event.stopPropagation();removeTrack(${i})" title="Remove">×</button>
         </div>
       `).join('');
+      if (selectedIdx !== null) {
+        const items = list.querySelectorAll('.track-item');
+        if (items[selectedIdx]) items[selectedIdx].classList.add('selected');
+      }
     }
   }
 
@@ -416,6 +470,42 @@
       if (res.ok) { toast('Added to queue', 'ok'); refresh(); }
       else toast('Failed to add', 'err');
     } catch (e) { toast('Error', 'err'); }
+  }
+
+  function selectTrack(e, index) {
+    if (e.target.closest('button')) return;
+    if (selectedIdx === index) {
+      selectedIdx = null;
+      e.currentTarget.classList.remove('selected');
+    } else {
+      document.querySelectorAll('.track-item.selected').forEach(el => el.classList.remove('selected'));
+      selectedIdx = index;
+      e.currentTarget.classList.add('selected');
+    }
+  }
+
+  async function moveToTop(index) {
+    try {
+      const res = await fetch('/api/queue/move-top/' + index, { method: 'POST' });
+      if (res.ok) { selectedIdx = 0; refresh(); }
+      else toast('Failed to move', 'err');
+    } catch (e) { toast('Error', 'err'); }
+  }
+
+  function onVolInput(v) {
+    document.getElementById('volVal').textContent = v;
+    isDraggingVol = true;
+    clearTimeout(volTimer);
+    volTimer = setTimeout(async () => {
+      try {
+        await fetch('/api/volume', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ volume: parseInt(v) })
+        });
+      } catch (e) { }
+      isDraggingVol = false;
+    }, 120);
   }
 
   async function removeTrack(index) {
