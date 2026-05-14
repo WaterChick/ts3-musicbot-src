@@ -333,7 +333,11 @@
     <div class="card">
       <div class="card-header">
         Queue
-        <span class="count" id="queueCount">0</span>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button class="btn" onclick="ctrl('shuffle')" style="padding:3px 10px;font-size:12px;" title="Shuffle queue">⇌ Shuffle</button>
+          <button class="btn danger" onclick="confirmClear()" style="padding:3px 10px;font-size:12px;" title="Clear queue">✕ Clear</button>
+          <span class="count" id="queueCount">0</span>
+        </div>
       </div>
       <div class="queue-list" id="queueList">
         <div class="empty-state">Queue is empty</div>
@@ -361,6 +365,8 @@
   let selectedIdx = null;
   let isDraggingVol = false;
   let volTimer = null;
+  let lastQueueSize = 0;
+  let addPending = null; // { sizeAtAdd, startTime }
 
   async function refresh() {
     try {
@@ -395,6 +401,19 @@
     // queue
     const queue = data.queue || [];
     document.getElementById('queueCount').textContent = queue.length;
+
+    // error detection for add operations
+    if (addPending !== null) {
+      if (queue.length > addPending.sizeAtAdd) {
+        toast('Added to queue', 'ok');
+        addPending = null;
+      } else if (Date.now() - addPending.startTime > 30000) {
+        toast('Nothing added — link may be inaccessible or private', 'err');
+        addPending = null;
+      }
+    }
+    lastQueueSize = queue.length;
+
     const list = document.getElementById('queueList');
     if (queue.length === 0) {
       list.innerHTML = '<div class="empty-state">Queue is empty</div>';
@@ -452,7 +471,8 @@
       });
       if (res.ok) {
         input.value = '';
-        toast('Added to queue', 'ok');
+        toast('Fetching…', '');
+        addPending = { sizeAtAdd: lastQueueSize, startTime: Date.now() };
         refresh();
       } else {
         toast('Failed to add', 'err');
@@ -467,9 +487,19 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ local: index })
       });
-      if (res.ok) { toast('Added to queue', 'ok'); refresh(); }
-      else toast('Failed to add', 'err');
+      if (res.ok) {
+        toast('Fetching…', '');
+        addPending = { sizeAtAdd: lastQueueSize, startTime: Date.now() };
+        refresh();
+      } else {
+        toast('Failed to add', 'err');
+      }
     } catch (e) { toast('Error', 'err'); }
+  }
+
+  function confirmClear() {
+    if (!confirm('Clear the entire queue?')) return;
+    ctrl('clear');
   }
 
   function selectTrack(e, index) {

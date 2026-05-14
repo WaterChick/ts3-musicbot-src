@@ -93,6 +93,7 @@ class SongQueue(
         trackList: TrackList,
         position: Int? = null,
     ): Boolean {
+        if (trackList.trackList.isEmpty()) return false
         synchronized(songQueue) {
             if (position != null) {
                 songQueue.addAll(position, trackList.trackList)

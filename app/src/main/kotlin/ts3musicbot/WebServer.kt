@@ -68,6 +68,7 @@ object WebServer {
             path == "/api/queue/play" && method == "POST" -> controlQueue(ex) { sq -> sq.startQueue() }
             path == "/api/queue/stop" && method == "POST" -> controlQueue(ex) { sq -> sq.stopQueue() }
             path == "/api/queue/clear" && method == "POST" -> controlQueue(ex) { sq -> sq.clearQueue() }
+            path == "/api/queue/shuffle" && method == "POST" -> controlQueue(ex) { sq -> sq.shuffleQueue() }
             path.startsWith("/api/queue/move-top/") && method == "POST" -> moveTrackToTop(ex, path)
             path.startsWith("/api/queue/") && method == "DELETE" -> deleteTrack(ex, path)
             else -> ex.sendError(404, "Not found")
