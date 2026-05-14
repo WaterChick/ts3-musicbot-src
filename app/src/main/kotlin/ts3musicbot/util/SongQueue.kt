@@ -942,6 +942,7 @@ class SongQueue(
                             }
                         }
                         delay(3000)
+                        listener.onTrackStarted(getPlayer(), track)
                     }
 
                     else -> {
@@ -1077,7 +1078,12 @@ class SongQueue(
                             }
                         }
                     } else {
-                        if (trackPosition >= trackLength - 5) {
+                        if (track.link.serviceType() == ServiceType.LOCAL) {
+                            if (!processRunning()) {
+                                skipTrack()
+                                break@loop
+                            }
+                        } else if (trackPosition >= trackLength - 5) {
                             skipTrack()
                             break@loop
                         } else {
@@ -1101,7 +1107,7 @@ class SongQueue(
                     }
                 }
 
-                ServiceType.YOUTUBE, ServiceType.SOUNDCLOUD, ServiceType.BANDCAMP -> {
+                ServiceType.YOUTUBE, ServiceType.SOUNDCLOUD, ServiceType.BANDCAMP, ServiceType.LOCAL -> {
                     // First kill the spotify player in case its running.
                     // Although this shouldn't be needed, at least in the case of the official spotify client,
                     // sometimes it won't respect the disabled autoplay setting, and will continue playing something else
