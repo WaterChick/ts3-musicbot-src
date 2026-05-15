@@ -446,7 +446,7 @@ class SongQueue(
             return if (metadata.errorText.isEmpty()) {
                 metadata.ifOutputTextNotEmpty {
                     it.lines()
-                        .first { it.contains("xesam:url") }.orEmpty()
+                        .firstOrNull { it.contains("xesam:url") }.orEmpty()
                         .replace("(^.+\\s+\"?|\"?$)".toRegex(), "")
                 }
             } else {
