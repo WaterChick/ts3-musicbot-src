@@ -311,17 +311,16 @@ class SongQueue(
         }
     }
 
-    fun resumePlayback() {
-        synchronized(trackPlayer) { trackPlayer.resumeTrack() }
-    }
+    // No outer `synchronized(trackPlayer)` on player I/O: these call playerctl/dbus-send via
+    // ProcessBuilder, and holding the monitor across subprocess work blocks every reader of
+    // `getCurrent()` (WebServer.getQueue, ChatReader.%queue-*) for as long as the syscall takes
+    // — a stuck fork() then deadlocks the whole bot. The track field itself is guarded inside
+    // [TrackPlayer.stopTrack]/[TrackPlayer.skipTrack] by `synchronized(this)` over the cancel.
+    fun resumePlayback() = trackPlayer.resumeTrack()
 
-    fun pausePlayback() {
-        synchronized(trackPlayer) { trackPlayer.pauseTrack() }
-    }
+    fun pausePlayback() = trackPlayer.pauseTrack()
 
-    fun stopQueue() {
-        synchronized(trackPlayer) { trackPlayer.stopTrack() }
-    }
+    fun stopQueue() = trackPlayer.stopTrack()
 
     /**
      * Plays the next track in the queue.
@@ -1214,14 +1213,14 @@ class SongQueue(
                 trackJob.cancel()
             }
             val player = getPlayer()
-            // try stopping playback in a loop because sometimes just once doesn't seem to be enough
-            while (playerStatus().outputText == "Playing") {
-                playerctl(player, if (player == "spotify") "pause" else "stop")
-            }
-            // if mpv is in use, kill the process
+            // For mpv, kill the OS process first. The dbus stop loop below relies on
+            // playerStatus() returning a non-"Playing" reply — if MPRIS is wedged (which
+            // happens on some YT tracks; see [getCurrentPosition]'s position-string guard),
+            // the loop would never terminate.
             if (player == "mpv") {
                 killPlayer(player)
             }
+            stopViaPlayerctlBounded(player)
             listener.onTrackStopped(player, track)
         }
 
@@ -1231,13 +1230,21 @@ class SongQueue(
                 trackJob.cancel()
             }
             val player = getPlayer()
-            while (playerStatus().outputText == "Playing") {
-                playerctl(player, if (player == "spotify") "pause" else "stop")
-            }
             if (player == "mpv") {
                 killPlayer(player)
             }
+            stopViaPlayerctlBounded(player)
             listener.onTrackEnded(player, track)
+        }
+
+        // Bounded stop loop — caps at 5 attempts so a wedged dbus / hung subprocess can't
+        // pin this thread (and, by extension, every caller of [SongQueue.getCurrent]) forever.
+        private fun stopViaPlayerctlBounded(player: String) {
+            var attempts = 0
+            while (attempts < 5 && playerStatus().outputText == "Playing") {
+                playerctl(player, if (player == "spotify") "pause" else "stop")
+                attempts++
+            }
         }
     }
 }
