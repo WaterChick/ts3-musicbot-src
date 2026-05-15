@@ -148,39 +148,50 @@ class OfficialTSClient(botSettings: BotSettings) : Client(botSettings) {
                 if (channelPassword.isNotEmpty()) " with the password \"$channelPassword\"" else "",
         )
 
-        val currentChannelName = getCurrentChannelName()
-        return if (currentChannelName == "not connected") {
+        // The URL channel param in startTeamSpeak() joins the channel
+        // asynchronously; wait up to 15s for it to complete before we decide
+        // anything is wrong. This avoids a needless reconnect that the server
+        // tends to reject as anti-flood.
+        var currentChannelName = getCurrentChannelName()
+        val deadline = System.currentTimeMillis() + 15_000L
+        while (currentChannelName != channelName &&
+            currentChannelName != "not connected" &&
+            System.currentTimeMillis() < deadline
+        ) {
+            delay(1000)
+            currentChannelName = getCurrentChannelName()
+        }
+
+        if (currentChannelName == "not connected") {
             println("Connection failed! Trying again...")
             restartClient()
-            false
-        } else {
-            if (channelName != currentChannelName) {
-                fun urlEnc(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
-                if (channelPassword.isNotEmpty()) {
-                    clientQuery("disconnect")
-                    delay(500)
-                    clientQuery(
-                        "connect address=${botSettings.serverAddress} password=${urlEnc(botSettings.serverPassword)} " +
-                            "nickname=${urlEnc(botSettings.nickname)} " +
-                            "channel=${urlEnc(channelName)} channel_pw=${urlEnc(channelPassword)}",
-                    )
-                } else {
-                    clientQuery("disconnect")
-                    delay(3000)
-                    clientQuery(
-                        "connect address=${botSettings.serverAddress} " +
-                            "nickname=${urlEnc(botSettings.nickname)}" +
-                            (if (botSettings.serverPassword.isNotEmpty()) " password=${urlEnc(botSettings.serverPassword)}" else "") +
-                            " channel=${urlEnc(channelName)}",
-                    )
-                    delay(5000)
-                }
-                updateChannelFile()
-                channelName == getCurrentChannelName()
-            } else {
-                true
-            }
+            return false
         }
+
+        if (currentChannelName == channelName) {
+            updateChannelFile()
+            return true
+        }
+
+        // Still in the wrong channel. Move via clientmove instead of
+        // disconnect+reconnect — uses only numeric IDs so there are no
+        // emoji/encoding pitfalls, and the bot stays connected.
+        val myClid = getCurrentUserId()
+        val targetCid = getChannelId(channelName)
+        println("Moving via clientmove: clid=$myClid cid=$targetCid")
+        if (myClid.isNotEmpty() && targetCid > 0) {
+            val moveCmd =
+                if (channelPassword.isNotEmpty()) {
+                    "clientmove clid=$myClid cid=$targetCid cpw=${encode(channelPassword)}"
+                } else {
+                    "clientmove clid=$myClid cid=$targetCid"
+                }
+            clientQuery(moveCmd)
+            delay(2000)
+        }
+
+        updateChannelFile()
+        return channelName == getCurrentChannelName()
     }
 
     /**
