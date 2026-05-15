@@ -31,6 +31,7 @@ class SongQueue(
     private val playStateListener: PlayStateListener,
 ) : PlayStateListener {
     private val trackPlayer = TrackPlayer(botSettings, teamSpeak, spotify, soundCloud, youTube, bandcamp, this)
+    private val stateLock = Any()
     private var queueState = State.QUEUE_STOPPED
 
     enum class State {
@@ -40,12 +41,12 @@ class SongQueue(
     }
 
     private fun setState(state: State) {
-        synchronized(queueState) {
+        synchronized(stateLock) {
             queueState = state
         }
     }
 
-    fun getState() = synchronized(queueState) { queueState }
+    fun getState() = synchronized(stateLock) { queueState }
 
     fun getTrackPosition() =
         synchronized(trackPlayer) {
@@ -270,7 +271,15 @@ class SongQueue(
 
     // starts playing song queue
     fun startQueue() {
-        if (getState() == State.QUEUE_STOPPED) {
+        val shouldStart = synchronized(stateLock) {
+            if (queueState == State.QUEUE_STOPPED) {
+                queueState = State.QUEUE_PLAYING
+                true
+            } else {
+                false
+            }
+        }
+        if (shouldStart) {
             println("Starting queue.")
             playNext()
         } else {
@@ -359,7 +368,7 @@ class SongQueue(
     ) {
         playStateListener.onTrackEnded(player, track)
         println("Track ended.")
-        when (queueState) {
+        when (getState()) {
             State.QUEUE_PLAYING, State.QUEUE_PAUSED -> playNext()
             else -> {}
         }
