@@ -443,6 +443,12 @@ class SongQueue(
         var trackPosition = 0L
         var startPosition = 0L
         var wasPaused = false
+        // Guards the "trackPosition == 0L" branch in the playback loop so we don't
+        // fire listener.onTrackStarted (and the corresponding %queue-nowplaying chat
+        // announcement) on every poll iteration while position is stuck at 0 — which
+        // happens when mpv-mpris replies to Position with `variant string ""` during
+        // ytdl loading. Reset on each startTrack().
+        var trackStartedFired = false
 
         // shouldPause is checked when playback status is set to "Playing" after the track wasPaused.
         // If shouldPause, the track is then paused again. This really only happens if the media player in question decides to crap itself
@@ -557,6 +563,7 @@ class SongQueue(
                 trackPositionJob.cancel()
                 trackPosition = 0
                 startPosition = startAt
+                trackStartedFired = false
                 trackJob.cancel()
                 trackJob = Job()
                 refreshPulseAudio()
@@ -1045,7 +1052,8 @@ class SongQueue(
                                         listener.onTrackResumed(getPlayer(), track)
                                     }
                                 }
-                                if (trackPosition == 0L) {
+                                if (trackPosition == 0L && !trackStartedFired) {
+                                    trackStartedFired = true
                                     synchronized(this) {
                                         CoroutineScope(trackJob + IO).launch {
                                             if (startAt != 0L) {
