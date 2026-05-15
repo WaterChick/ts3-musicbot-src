@@ -8,6 +8,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import ts3musicbot.BotState
+import ts3musicbot.StateStore
 import ts3musicbot.client.OfficialTSClient
 import ts3musicbot.services.Bandcamp
 import ts3musicbot.services.Service
@@ -67,19 +68,23 @@ class SongQueue(
      * @param track song's link
      * @param position position in which the song should be added.
      */
+    private fun persist() = StateStore.saveDebounced()
+
     fun addToQueue(
         track: Track,
         position: Int? = null,
     ): Boolean {
-        synchronized(songQueue) {
-            if (position != null) {
-                songQueue.add(position, track)
-            } else {
-                songQueue.add(track)
+        val ok =
+            synchronized(songQueue) {
+                if (position != null) {
+                    songQueue.add(position, track)
+                } else {
+                    songQueue.add(track)
+                }
+                songQueue.contains(track)
             }
-
-            return songQueue.contains(track)
-        }
+        persist()
+        return ok
     }
 
     /**
@@ -92,15 +97,17 @@ class SongQueue(
         position: Int? = null,
     ): Boolean {
         if (trackList.trackList.isEmpty()) return false
-        synchronized(songQueue) {
-            if (position != null) {
-                songQueue.addAll(position, trackList.trackList)
-            } else {
-                songQueue.addAll(trackList.trackList)
+        val ok =
+            synchronized(songQueue) {
+                if (position != null) {
+                    songQueue.addAll(position, trackList.trackList)
+                } else {
+                    songQueue.addAll(trackList.trackList)
+                }
+                songQueue.containsAll(trackList.trackList)
             }
-
-            return songQueue.containsAll(trackList.trackList)
-        }
+        persist()
+        return ok
     }
 
     /**
@@ -110,6 +117,7 @@ class SongQueue(
         synchronized(songQueue) {
             songQueue.clear()
         }
+        persist()
     }
 
     /**
@@ -121,6 +129,7 @@ class SongQueue(
             is Track -> synchronized(songQueue) { songQueue.remove(trackOrPosition) }
             is Int -> synchronized(songQueue) { songQueue.removeAt(trackOrPosition) }
         }
+        persist()
     }
 
     /**
@@ -147,6 +156,7 @@ class SongQueue(
                 synchronized(songQueue) { songQueue.removeAt(position) }
             }
         }
+        persist()
     }
 
     /**
@@ -226,6 +236,7 @@ class SongQueue(
                 songQueue.add(0, track)
             }
         }
+        persist()
     }
 
     fun reorderTrack(from: Int, to: Int) {
@@ -234,6 +245,7 @@ class SongQueue(
             val track = songQueue.removeAt(from)
             songQueue.add(to, track)
         }
+        persist()
     }
 
     fun setVolume(v: Int) {
@@ -242,6 +254,7 @@ class SongQueue(
             ProcessBuilder("pactl", "set-sink-volume", "@DEFAULT_SINK@", "${BotState.volume}%")
                 .start()
         } catch (_: Exception) { }
+        persist()
     }
 
     fun nowPlaying(): Track = getCurrent()
@@ -250,6 +263,7 @@ class SongQueue(
         synchronized(songQueue) {
             songQueue.shuffle()
         }
+        persist()
     }
 
     fun skipSong() {
@@ -757,6 +771,7 @@ class SongQueue(
                         return microseconds / 1000000
                     }
                     println()
+                    var saveTicker = 0
                     withContext(job + IO) {
                         while (job.isActive) {
                             val currentPos = getCurrentPosition()
@@ -772,6 +787,11 @@ class SongQueue(
                                 } else {
                                     skipTrack()
                                 }
+                            }
+                            // persist position every ~5s so a crash loses at most a few seconds of progress
+                            if (++saveTicker >= 10) {
+                                saveTicker = 0
+                                ts3musicbot.StateStore.saveDebounced()
                             }
                             delay(500)
                         }

@@ -87,7 +87,12 @@ object WebServer {
                 val v = json.optInt("volume", -1)
                 if (v !in 0..100) { ex.sendError(400, "volume must be 0-100"); return }
                 val sq = BotState.getSongQueue()
-                    ?: run { BotState.volume = v; ex.sendJson(JSONObject().put("ok", true).put("volume", v)); return }
+                    ?: run {
+                        BotState.volume = v
+                        StateStore.saveDebounced()
+                        ex.sendJson(JSONObject().put("ok", true).put("volume", v))
+                        return
+                    }
                 sq.setVolume(v)
                 ex.sendJson(JSONObject().put("ok", true).put("volume", BotState.volume))
             }

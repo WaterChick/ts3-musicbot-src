@@ -2635,12 +2635,12 @@ class ChatReader(
 
     // Send a message to the current channel's chat
     private fun printToChat(messages: List<String>) {
-        if (latestMsgUsername == "__console__") {
-            messages.forEach { println(it) }
-        } else {
-            for (message in messages) {
-                client.sendMsgToChannel(message)
-            }
+        when (latestMsgUsername) {
+            "__console__", "__restore__" -> messages.forEach { println(it) }
+            else ->
+                for (message in messages) {
+                    client.sendMsgToChannel(message)
+                }
         }
     }
 

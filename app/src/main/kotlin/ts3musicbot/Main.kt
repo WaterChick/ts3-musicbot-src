@@ -382,6 +382,7 @@ class Main :
                                 BotState.chatReader = chatReader
                                 BotState.commandList = commandList
                                 WebServer.start()
+                                StateStore.attemptRestore(chatReader, commandList)
                                 val console =
                                     Console(
                                         commandList,
@@ -431,6 +432,7 @@ class Main :
                             BotState.chatReader = chatReader
                             BotState.commandList = commandList
                             WebServer.start()
+                            StateStore.attemptRestore(chatReader, commandList)
                             val console =
                                 Console(
                                     commandList,
@@ -1065,6 +1067,7 @@ class Main :
                                 BotState.chatReader = chatReader
                                 BotState.commandList = commandList
                                 WebServer.start()
+                                StateStore.attemptRestore(chatReader, commandList)
                                 val console =
                                     Console(
                                         commandList,
@@ -1122,6 +1125,7 @@ class Main :
                             BotState.chatReader = chatReader
                             BotState.commandList = commandList
                             WebServer.start()
+                            StateStore.attemptRestore(chatReader, commandList)
                             val console =
                                 Console(
                                     commandList,
