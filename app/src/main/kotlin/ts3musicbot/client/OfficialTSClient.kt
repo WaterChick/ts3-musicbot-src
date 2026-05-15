@@ -152,8 +152,15 @@ class OfficialTSClient(botSettings: BotSettings) : Client(botSettings) {
                             "channel=${encode(channelName)} channel_pw=${encode(channelPassword)}",
                     )
                 } else {
-                    val channelId = getChannelId(channelName)
-                    clientQuery("clientmove cid=$channelId clid=${getCurrentUserId()}")
+                    clientQuery("disconnect")
+                    delay(3000)
+                    clientQuery(
+                        "connect address=${botSettings.serverAddress} " +
+                            "nickname=${encode(botSettings.nickname)}" +
+                            (if (botSettings.serverPassword.isNotEmpty()) " password=${encode(botSettings.serverPassword)}" else "") +
+                            " channel=${encode(channelName)}",
+                    )
+                    delay(5000)
                 }
                 updateChannelFile()
                 channelName == getCurrentChannelName()
@@ -218,6 +225,20 @@ class OfficialTSClient(botSettings: BotSettings) : Client(botSettings) {
                                 URLEncoder.encode(botSettings.nickname, Charsets.UTF_8.toString())
                             }.replace("+", "%20")
                         }" +
+                        (if (botSettings.channelName.isNotEmpty()) {
+                            "&channel=${
+                                withContext(IO) {
+                                    URLEncoder.encode(botSettings.channelName, Charsets.UTF_8.toString())
+                                }.replace("+", "%20")
+                            }"
+                        } else { "" }) +
+                        (if (botSettings.channelPassword.isNotEmpty()) {
+                            "&channel_pw=${
+                                withContext(IO) {
+                                    URLEncoder.encode(botSettings.channelPassword, Charsets.UTF_8.toString())
+                                }.replace("+", "%20")
+                            }"
+                        } else { "" }) +
                         (
                             if ((botSettings.serverPassword.isNotEmpty())) {
                                 "&password=${
