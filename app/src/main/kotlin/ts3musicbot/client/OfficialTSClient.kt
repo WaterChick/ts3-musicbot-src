@@ -181,7 +181,7 @@ class OfficialTSClient(botSettings: BotSettings) : Client(botSettings) {
                 decode(
                     connectInfo.first { it.startsWith("path=") }
                         .substringAfter("path=").substringBefore(' '),
-                )
+                ).substringAfterLast("/")
             connectInfo.any { it.contains("msg=not\\sconnected") } ->
                 decode(
                     connectInfo.first { it.contains("msg=not\\sconnected") }
