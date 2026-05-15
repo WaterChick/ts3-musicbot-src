@@ -476,10 +476,18 @@
     } catch (e) { /* ignore */ }
   }
 
+  async function errorMsg(res, fallback) {
+    try {
+      const body = await res.json();
+      if (body && body.error) return body.error;
+    } catch (_) { /* body may be empty or not JSON */ }
+    return fallback || ('HTTP ' + res.status);
+  }
+
   async function addUrl() {
     const input = document.getElementById('urlInput');
     const url = input.value.trim();
-    if (!url) return;
+    if (!url) { toast('Enter a link first', 'err'); return; }
     try {
       const res = await fetch('/api/queue/add', {
         method: 'POST',
@@ -492,9 +500,9 @@
         addPending = { sizeAtAdd: lastQueueSize, startTime: Date.now() };
         refresh();
       } else {
-        toast('Failed to add', 'err');
+        toast(await errorMsg(res, 'Failed to add'), 'err');
       }
-    } catch (e) { toast('Error', 'err'); }
+    } catch (e) { toast('Network error', 'err'); }
   }
 
   async function addLocal(index) {
@@ -509,9 +517,9 @@
         addPending = { sizeAtAdd: lastQueueSize, startTime: Date.now() };
         refresh();
       } else {
-        toast('Failed to add', 'err');
+        toast(await errorMsg(res, 'Failed to add'), 'err');
       }
-    } catch (e) { toast('Error', 'err'); }
+    } catch (e) { toast('Network error', 'err'); }
   }
 
   function confirmClear() {
@@ -551,21 +559,22 @@
     document.querySelectorAll('.queue-card').forEach(c => c.classList.remove('dragging', 'drag-over'));
     if (from === null || from === toIndex) return;
     try {
-      await fetch('/api/queue/reorder', {
+      const res = await fetch('/api/queue/reorder', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ from, to: toIndex })
       });
+      if (!res.ok) toast(await errorMsg(res, 'Failed to reorder'), 'err');
       refresh();
-    } catch (e) { toast('Error', 'err'); }
+    } catch (e) { toast('Network error', 'err'); }
   }
 
   async function moveToTop(index) {
     try {
       const res = await fetch('/api/queue/move-top/' + index, { method: 'POST' });
-      if (res.ok) { selectedIdx = 0; refresh(); }
-      else toast('Failed to move', 'err');
-    } catch (e) { toast('Error', 'err'); }
+      if (res.ok) { refresh(); }
+      else toast(await errorMsg(res, 'Failed to move'), 'err');
+    } catch (e) { toast('Network error', 'err'); }
   }
 
   function onVolInput(v) {
@@ -574,12 +583,13 @@
     clearTimeout(volTimer);
     volTimer = setTimeout(async () => {
       try {
-        await fetch('/api/volume', {
+        const res = await fetch('/api/volume', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ volume: parseInt(v) })
         });
-      } catch (e) { }
+        if (!res.ok) toast(await errorMsg(res, 'Failed to set volume'), 'err');
+      } catch (e) { toast('Network error', 'err'); }
       isDraggingVol = false;
     }, 120);
   }
@@ -588,15 +598,19 @@
     try {
       const res = await fetch('/api/queue/' + index, { method: 'DELETE' });
       if (res.ok) { refresh(); }
-      else toast('Failed to remove', 'err');
-    } catch (e) { toast('Error', 'err'); }
+      else toast(await errorMsg(res, 'Failed to remove'), 'err');
+    } catch (e) { toast('Network error', 'err'); }
   }
 
   async function ctrl(action) {
     try {
-      await fetch('/api/queue/' + action, { method: 'POST' });
+      const res = await fetch('/api/queue/' + action, { method: 'POST' });
+      if (!res.ok) {
+        toast(await errorMsg(res, 'Failed: ' + action), 'err');
+        return;
+      }
       setTimeout(refresh, 400);
-    } catch (e) { toast('Error', 'err'); }
+    } catch (e) { toast('Network error', 'err'); }
   }
 
   let toastTimer = null;

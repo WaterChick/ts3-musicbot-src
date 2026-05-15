@@ -4,6 +4,7 @@ import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import org.json.JSONArray
 import org.json.JSONObject
+import ts3musicbot.util.SongQueue
 import java.io.File
 import java.net.InetSocketAddress
 import java.util.Base64
@@ -62,13 +63,13 @@ object WebServer {
         when {
             path == "/api/queue" && method == "GET" -> getQueue(ex)
             path == "/api/queue/add" && method == "POST" -> addToQueue(ex)
-            path == "/api/queue/skip" && method == "POST" -> controlQueue(ex) { sq -> sq.skipSong() }
-            path == "/api/queue/pause" && method == "POST" -> controlQueue(ex) { sq -> sq.pausePlayback() }
-            path == "/api/queue/resume" && method == "POST" -> controlQueue(ex) { sq -> sq.resumePlayback() }
-            path == "/api/queue/play" && method == "POST" -> controlQueue(ex) { sq -> sq.startQueue() }
-            path == "/api/queue/stop" && method == "POST" -> controlQueue(ex) { sq -> sq.stopQueue() }
-            path == "/api/queue/clear" && method == "POST" -> controlQueue(ex) { sq -> sq.clearQueue() }
-            path == "/api/queue/shuffle" && method == "POST" -> controlQueue(ex) { sq -> sq.shuffleQueue() }
+            path == "/api/queue/skip" && method == "POST" -> doSkip(ex)
+            path == "/api/queue/pause" && method == "POST" -> doPause(ex)
+            path == "/api/queue/resume" && method == "POST" -> doResume(ex)
+            path == "/api/queue/play" && method == "POST" -> doPlay(ex)
+            path == "/api/queue/stop" && method == "POST" -> doStop(ex)
+            path == "/api/queue/clear" && method == "POST" -> doClear(ex)
+            path == "/api/queue/shuffle" && method == "POST" -> doShuffle(ex)
             path == "/api/queue/reorder" && method == "POST" -> reorderTrack(ex)
             path.startsWith("/api/queue/move-top/") && method == "POST" -> moveTrackToTop(ex, path)
             path.startsWith("/api/queue/") && method == "DELETE" -> deleteTrack(ex, path)
@@ -183,6 +184,8 @@ object WebServer {
             ?: run { ex.sendError(400, "Invalid index"); return }
         val sq = BotState.getSongQueue()
             ?: run { ex.sendError(503, "Bot not ready"); return }
+        val size = sq.getQueue().size
+        if (index < 0 || index >= size) { ex.sendError(409, "Track no longer in queue"); return }
         sq.deleteTrack(index)
         ex.sendJson(JSONObject().put("ok", true))
     }
@@ -196,6 +199,9 @@ object WebServer {
         if (from < 0 || to < 0) { ex.sendError(400, "Invalid from/to"); return }
         val sq = BotState.getSongQueue()
             ?: run { ex.sendError(503, "Bot not ready"); return }
+        val size = sq.getQueue().size
+        if (from >= size || to >= size) { ex.sendError(409, "Track no longer in queue"); return }
+        if (from == to) { ex.sendJson(JSONObject().put("ok", true)); return }
         sq.reorderTrack(from, to)
         ex.sendJson(JSONObject().put("ok", true))
     }
@@ -205,14 +211,80 @@ object WebServer {
             ?: run { ex.sendError(400, "Invalid index"); return }
         val sq = BotState.getSongQueue()
             ?: run { ex.sendError(503, "Bot not ready"); return }
+        val size = sq.getQueue().size
+        if (index <= 0 || index >= size) { ex.sendError(409, "Track no longer in queue"); return }
         sq.moveToTop(index)
         ex.sendJson(JSONObject().put("ok", true))
     }
 
-    private fun controlQueue(ex: HttpExchange, action: (ts3musicbot.util.SongQueue) -> Unit) {
+    private fun withQueue(ex: HttpExchange, block: (sq: SongQueue) -> Unit) {
         val sq = BotState.getSongQueue()
             ?: run { ex.sendError(503, "Bot not ready"); return }
-        action(sq)
+        block(sq)
+    }
+
+    private fun doPlay(ex: HttpExchange) = withQueue(ex) { sq ->
+        when (sq.getState()) {
+            SongQueue.State.QUEUE_PLAYING -> { ex.sendError(409, "Queue is already playing"); return@withQueue }
+            SongQueue.State.QUEUE_PAUSED  -> { ex.sendError(409, "Queue is paused — use Resume"); return@withQueue }
+            SongQueue.State.QUEUE_STOPPED -> {}
+        }
+        if (sq.getQueue().isEmpty()) {
+            ex.sendError(409, "Queue is empty"); return@withQueue
+        }
+        sq.startQueue()
+        ex.sendJson(JSONObject().put("ok", true))
+    }
+
+    private fun doStop(ex: HttpExchange) = withQueue(ex) { sq ->
+        if (sq.getState() == SongQueue.State.QUEUE_STOPPED) {
+            ex.sendError(409, "Nothing is playing"); return@withQueue
+        }
+        sq.stopQueue()
+        ex.sendJson(JSONObject().put("ok", true))
+    }
+
+    private fun doPause(ex: HttpExchange) = withQueue(ex) { sq ->
+        when (sq.getState()) {
+            SongQueue.State.QUEUE_PAUSED  -> { ex.sendError(409, "Already paused"); return@withQueue }
+            SongQueue.State.QUEUE_STOPPED -> { ex.sendError(409, "Nothing to pause"); return@withQueue }
+            SongQueue.State.QUEUE_PLAYING -> {}
+        }
+        sq.pausePlayback()
+        ex.sendJson(JSONObject().put("ok", true))
+    }
+
+    private fun doResume(ex: HttpExchange) = withQueue(ex) { sq ->
+        when (sq.getState()) {
+            SongQueue.State.QUEUE_PLAYING -> { ex.sendError(409, "Already playing"); return@withQueue }
+            SongQueue.State.QUEUE_STOPPED -> { ex.sendError(409, "Nothing to resume"); return@withQueue }
+            SongQueue.State.QUEUE_PAUSED  -> {}
+        }
+        sq.resumePlayback()
+        ex.sendJson(JSONObject().put("ok", true))
+    }
+
+    private fun doSkip(ex: HttpExchange) = withQueue(ex) { sq ->
+        if (sq.getQueue().isEmpty()) {
+            ex.sendError(409, "Nothing to skip"); return@withQueue
+        }
+        sq.skipSong()
+        ex.sendJson(JSONObject().put("ok", true))
+    }
+
+    private fun doClear(ex: HttpExchange) = withQueue(ex) { sq ->
+        if (sq.getQueue().isEmpty()) {
+            ex.sendError(409, "Queue is already empty"); return@withQueue
+        }
+        sq.clearQueue()
+        ex.sendJson(JSONObject().put("ok", true))
+    }
+
+    private fun doShuffle(ex: HttpExchange) = withQueue(ex) { sq ->
+        if (sq.getQueue().size < 2) {
+            ex.sendError(409, "Need at least 2 tracks to shuffle"); return@withQueue
+        }
+        sq.shuffleQueue()
         ex.sendJson(JSONObject().put("ok", true))
     }
 
@@ -227,7 +299,8 @@ object WebServer {
     }
 
     private fun HttpExchange.sendError(code: Int, msg: String) {
-        val bytes = msg.toByteArray(Charsets.UTF_8)
+        val bytes = JSONObject().put("error", msg).toString().toByteArray(Charsets.UTF_8)
+        responseHeaders.add("Content-Type", "application/json; charset=UTF-8")
         sendResponseHeaders(code, bytes.size.toLong())
         responseBody.use { it.write(bytes) }
     }
