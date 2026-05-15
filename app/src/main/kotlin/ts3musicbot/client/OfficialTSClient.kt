@@ -155,22 +155,23 @@ class OfficialTSClient(botSettings: BotSettings) : Client(botSettings) {
             false
         } else {
             if (channelName != currentChannelName) {
+                fun urlEnc(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
                 if (channelPassword.isNotEmpty()) {
                     clientQuery("disconnect")
                     delay(500)
                     clientQuery(
-                        "connect address=${botSettings.serverAddress} password=${encode(botSettings.serverPassword)} " +
-                            "nickname=${encode(botSettings.nickname)} " +
-                            "channel=${encode(channelName)} channel_pw=${encode(channelPassword)}",
+                        "connect address=${botSettings.serverAddress} password=${urlEnc(botSettings.serverPassword)} " +
+                            "nickname=${urlEnc(botSettings.nickname)} " +
+                            "channel=${urlEnc(channelName)} channel_pw=${urlEnc(channelPassword)}",
                     )
                 } else {
                     clientQuery("disconnect")
                     delay(3000)
                     clientQuery(
                         "connect address=${botSettings.serverAddress} " +
-                            "nickname=${encode(botSettings.nickname)}" +
-                            (if (botSettings.serverPassword.isNotEmpty()) " password=${encode(botSettings.serverPassword)}" else "") +
-                            " channel=${encode(channelName)}",
+                            "nickname=${urlEnc(botSettings.nickname)}" +
+                            (if (botSettings.serverPassword.isNotEmpty()) " password=${urlEnc(botSettings.serverPassword)}" else "") +
+                            " channel=${urlEnc(channelName)}",
                     )
                     delay(5000)
                 }
