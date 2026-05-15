@@ -85,7 +85,7 @@ object WebServer {
                 val json = runCatching { JSONObject(body) }.getOrNull()
                     ?: run { ex.sendError(400, "Invalid JSON"); return }
                 val v = json.optInt("volume", -1)
-                if (v !in 0..130) { ex.sendError(400, "volume must be 0-130"); return }
+                if (v !in 0..100) { ex.sendError(400, "volume must be 0-100"); return }
                 val sq = BotState.getSongQueue()
                     ?: run { BotState.volume = v; ex.sendJson(JSONObject().put("ok", true).put("volume", v)); return }
                 sq.setVolume(v)

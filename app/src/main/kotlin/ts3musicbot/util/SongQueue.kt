@@ -16,9 +16,6 @@ import ts3musicbot.services.SoundCloud
 import ts3musicbot.services.Spotify
 import ts3musicbot.services.YouTube
 import java.io.File
-import java.net.UnixDomainSocketAddress
-import java.nio.ByteBuffer
-import java.nio.channels.SocketChannel
 import java.util.Collections
 import kotlin.collections.ArrayList
 
@@ -239,12 +236,10 @@ class SongQueue(
     }
 
     fun setVolume(v: Int) {
-        BotState.volume = v.coerceIn(0, 130)
+        BotState.volume = v.coerceIn(0, 100)
         try {
-            val addr = UnixDomainSocketAddress.of("/tmp/mpv-ipc.sock")
-            val ch = SocketChannel.open(addr)
-            ch.write(ByteBuffer.wrap("{\"command\":[\"set_property\",\"volume\",${BotState.volume}]}\n".toByteArray()))
-            ch.close()
+            ProcessBuilder("pactl", "set-sink-volume", "@DEFAULT_SINK@", "${BotState.volume}%")
+                .start()
         } catch (_: Exception) { }
     }
 
@@ -875,7 +870,7 @@ class SongQueue(
                                             } else {
                                                 ""
                                             } +
-                                            " --ytdl \"${track.link}\" --volume=${BotState.volume}" +
+                                            " --ytdl \"${track.link}\" --volume=100" +
                                             " --input-ipc-server=/tmp/mpv-ipc.sock &",
                                         inheritIO = true,
                                         ignoreOutput = true,
@@ -943,7 +938,7 @@ class SongQueue(
                         val mpvLocalRunnable =
                             Runnable {
                                 commandRunner.runCommand(
-                                    "mpv --terminal=no --no-video \"$localPath\" --volume=${BotState.volume}" +
+                                    "mpv --terminal=no --no-video \"$localPath\" --volume=100" +
                                         " --input-ipc-server=/tmp/mpv-ipc.sock &",
                                     inheritIO = true,
                                     ignoreOutput = true,
