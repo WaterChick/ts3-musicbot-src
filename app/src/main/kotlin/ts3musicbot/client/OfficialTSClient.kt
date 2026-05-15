@@ -45,6 +45,34 @@ class OfficialTSClient(botSettings: BotSettings) : Client(botSettings) {
     }
 
     /**
+     * Perform a TeamSpeak ServerQuery via the server's query port (default
+     * 10011). ClientQuery's `clientmove` silently no-ops for self-move and
+     * the URL `&channel=` parameter is ignored by the Linux client, so this
+     * is the only reliable way to actually place the bot in the configured
+     * channel. Credentials come from TS3_SERVERQUERY_USER/TS3_SERVERQUERY_PASS.
+     */
+    private fun serverQuery(queryMsg: String): String {
+        val sqUser = System.getenv("TS3_SERVERQUERY_USER")?.takeIf { it.isNotBlank() } ?: return ""
+        val sqPass = System.getenv("TS3_SERVERQUERY_PASS")?.takeIf { it.isNotBlank() } ?: return ""
+        val sqPort = System.getenv("TS3_SERVERQUERY_PORT")?.takeIf { it.isNotBlank() } ?: "10011"
+        val tmpFile = File.createTempFile("ts3sq", ".txt")
+        return try {
+            tmpFile.writeText(
+                "login $sqUser $sqPass\nuse port=${botSettings.serverPort}\n$queryMsg\nquit\n",
+                Charsets.UTF_8,
+            )
+            CommandRunner().runCommand(
+                "cat ${tmpFile.absolutePath} | nc -q 2 ${botSettings.serverAddress} $sqPort",
+                printOutput = false,
+                printErrors = false,
+                printCommand = false,
+            ).outputText
+        } finally {
+            tmpFile.delete()
+        }
+    }
+
+    /**
      * get current user's client id
      * @return returns current user's clid
      */
@@ -173,20 +201,20 @@ class OfficialTSClient(botSettings: BotSettings) : Client(botSettings) {
             return true
         }
 
-        // Still in the wrong channel. Move via clientmove instead of
-        // disconnect+reconnect — uses only numeric IDs so there are no
-        // emoji/encoding pitfalls, and the bot stays connected.
+        // Still in the wrong channel. ClientQuery's `clientmove` silently
+        // no-ops for self-move and the URL channel parameter is ignored, so
+        // we fall back to ServerQuery (port 10011) which actually works.
         val myClid = getCurrentUserId()
         val targetCid = getChannelId(channelName)
-        println("Moving via clientmove: clid=$myClid cid=$targetCid")
+        println("Moving via ServerQuery: cid=$targetCid clid=$myClid")
         if (myClid.isNotEmpty() && targetCid > 0) {
             val moveCmd =
                 if (channelPassword.isNotEmpty()) {
-                    "clientmove clid=$myClid cid=$targetCid cpw=${encode(channelPassword)}"
+                    "clientmove cid=$targetCid cpw=${encode(channelPassword)} clid=$myClid"
                 } else {
-                    "clientmove clid=$myClid cid=$targetCid"
+                    "clientmove cid=$targetCid clid=$myClid"
                 }
-            clientQuery(moveCmd)
+            serverQuery(moveCmd)
             delay(2000)
         }
 
