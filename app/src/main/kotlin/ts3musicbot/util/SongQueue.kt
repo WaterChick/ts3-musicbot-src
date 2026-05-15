@@ -753,7 +753,7 @@ class SongQueue(
                      * @return returns current track position in seconds
                      */
                     fun getCurrentPosition(): Long {
-                        val microseconds = playerctl(getPlayer(), "position").outputText.toLong()
+                        val microseconds = playerctl(getPlayer(), "position").outputText.toLongOrNull() ?: 0L
                         return microseconds / 1000000
                     }
                     println()

@@ -189,7 +189,17 @@ fun playerctl(
 
         "position" -> {
             if (extra.isEmpty()) {
-                val positionData = dbusGet("Position").outputText.substringAfter("int64").trim().ifEmpty { "0" }
+                val raw = dbusGet("Position").outputText
+                // mpv-mpris occasionally replies with `variant string ""` instead of `variant int64 N`
+                // while a track is loading / between tracks. Treat any non-int64 reply as position 0
+                // so the position-tracker coroutine doesn't die on a malformed reply.
+                val positionData =
+                    if (raw.contains("int64")) {
+                        raw.substringAfter("int64").trim().substringBefore('\n').takeWhile { it.isDigit() || it == '-' }
+                            .ifEmpty { "0" }
+                    } else {
+                        "0"
+                    }
                 Output(positionData)
             } else {
                 val trackId =
