@@ -23,14 +23,26 @@ class OfficialTSClient(botSettings: BotSettings) : Client(botSettings) {
      * @param queryMsg text for query.
      * @return returns proper data only when connected to a server
      */
-    private fun clientQuery(queryMsg: String) =
-        CommandRunner().runCommand(
-            "(echo \"auth apikey=${botSettings.apiKey}\"; " +
-                "echo \"$queryMsg\"; echo quit) | nc localhost 25639",
-            printOutput = false,
-            printErrors = false,
-            printCommand = false,
-        ).outputText
+    private fun clientQuery(queryMsg: String): String {
+        // Write the command to a temp file with explicit UTF-8 so emoji in
+        // channel names are not corrupted by the JVM's native (ASCII) encoding
+        // when passed as shell arguments.
+        val tmpFile = File.createTempFile("ts3cmd", ".txt")
+        return try {
+            tmpFile.writeText(
+                "auth apikey=${botSettings.apiKey}\n$queryMsg\nquit\n",
+                Charsets.UTF_8,
+            )
+            CommandRunner().runCommand(
+                "cat ${tmpFile.absolutePath} | nc localhost 25639",
+                printOutput = false,
+                printErrors = false,
+                printCommand = false,
+            ).outputText
+        } finally {
+            tmpFile.delete()
+        }
+    }
 
     /**
      * get current user's client id
