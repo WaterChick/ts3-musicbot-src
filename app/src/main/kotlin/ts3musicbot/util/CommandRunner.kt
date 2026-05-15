@@ -55,8 +55,8 @@ class CommandRunner {
         }
 
         if (!ignoreOutput) {
-            val stdOut = BufferedReader(InputStreamReader(process.inputStream))
-            val stdErr = BufferedReader(InputStreamReader(process.errorStream))
+            val stdOut = BufferedReader(InputStreamReader(process.inputStream, Charsets.UTF_8))
+            val stdErr = BufferedReader(InputStreamReader(process.errorStream, Charsets.UTF_8))
 
             var output = stdOut.readLine()
             while (output != null) {
