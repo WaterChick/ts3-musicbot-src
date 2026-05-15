@@ -18,6 +18,7 @@ import ts3musicbot.services.Spotify
 import ts3musicbot.services.YouTube
 import java.io.File
 import java.util.Collections
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.collections.ArrayList
 
 private var songQueue = Collections.synchronizedList(ArrayList<Track>())
@@ -34,6 +35,7 @@ class SongQueue(
     private val trackPlayer = TrackPlayer(botSettings, teamSpeak, spotify, soundCloud, youTube, bandcamp, this)
     private val stateLock = Any()
     private var queueState = State.QUEUE_STOPPED
+    private val skipInProgress = AtomicBoolean(false)
 
     enum class State {
         QUEUE_PLAYING,
@@ -267,18 +269,26 @@ class SongQueue(
     }
 
     fun skipSong() {
-        when (getState()) {
-            State.QUEUE_PLAYING, State.QUEUE_PAUSED, State.QUEUE_STOPPED -> {
-                CoroutineScope(IO).launch {
-                    if (getQueue().isNotEmpty()) {
-                        println("Skipping current track.")
-                        stopQueue()
-                        delay(1000)
-                        playNext()
-                    } else {
-                        println("Track cannot be skipped.")
-                    }
+        if (!skipInProgress.compareAndSet(false, true)) {
+            println("Skip already in progress, ignoring.")
+            return
+        }
+        CoroutineScope(IO).launch {
+            try {
+                val playing = getState() != State.QUEUE_STOPPED
+                if (getQueue().isNotEmpty()) {
+                    println("Skipping current track.")
+                    stopQueue()
+                    delay(1000)
+                    playNext()
+                } else if (playing) {
+                    println("Skipping current track (queue empty after).")
+                    stopQueue()
+                } else {
+                    println("Track cannot be skipped.")
                 }
+            } finally {
+                skipInProgress.set(false)
             }
         }
     }

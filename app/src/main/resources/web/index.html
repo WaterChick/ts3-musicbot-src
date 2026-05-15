@@ -96,6 +96,11 @@
   .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   .btn.primary:hover { background: var(--accent-h); border-color: var(--accent-h); }
   .btn.danger:hover { border-color: var(--danger); color: var(--danger); }
+  .btn:disabled, .file-add:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
 
   /* ── main layout ── */
   .main {
@@ -320,12 +325,12 @@
       <div class="np-title" id="npTitle" style="display:none"></div>
       <div class="np-artists" id="npArtists" style="display:none"></div>
     </div>
-    <div class="controls">
-      <button class="btn" onclick="ctrl('play')">▶ Play</button>
-      <button class="btn" onclick="ctrl('pause')">⏸ Pause</button>
-      <button class="btn" onclick="ctrl('resume')">⏯ Resume</button>
-      <button class="btn" onclick="ctrl('skip')">⏭ Skip</button>
-      <button class="btn danger" onclick="ctrl('stop')">⏹ Stop</button>
+    <div class="controls" id="controls">
+      <button class="btn" data-action="play" onclick="ctrl('play')">▶ Play</button>
+      <button class="btn" data-action="pause" onclick="ctrl('pause')">⏸ Pause</button>
+      <button class="btn" data-action="resume" onclick="ctrl('resume')">⏯ Resume</button>
+      <button class="btn" data-action="skip" onclick="ctrl('skip')">⏭ Skip</button>
+      <button class="btn danger" data-action="stop" onclick="ctrl('stop')">⏹ Stop</button>
     </div>
     <div class="vol-control">
       <span class="vol-icon">🔊</span>
@@ -344,7 +349,7 @@
       <div class="card-header">Add to Queue</div>
       <div class="add-form">
         <input type="text" id="urlInput" placeholder="YouTube / Spotify / SoundCloud link or search…" onkeydown="if(event.key==='Enter')addUrl()">
-        <button class="btn primary" onclick="addUrl()">+ Add</button>
+        <button class="btn primary" id="addBtn" onclick="addUrl()">+ Add</button>
       </div>
     </div>
 
@@ -384,6 +389,26 @@
   let volTimer = null;
   let lastQueueSize = 0;
   let addPending = null; // { sizeAtAdd, startTime }
+  let ctrlBusy = false;
+  let currentState = 'stopped';
+
+  // Which controls are valid in each queue state — used to disable the rest.
+  const VALID = {
+    stopped: new Set(['play']),
+    playing: new Set(['pause', 'skip', 'stop']),
+    paused:  new Set(['resume', 'skip', 'stop']),
+  };
+
+  function updateButtons() {
+    document.querySelectorAll('#controls .btn').forEach(btn => {
+      const action = btn.dataset.action;
+      const validForState = (VALID[currentState] || new Set()).has(action);
+      btn.disabled = ctrlBusy || !validForState;
+    });
+    const addBtn = document.getElementById('addBtn');
+    if (addBtn) addBtn.disabled = addPending !== null;
+    document.querySelectorAll('.file-add').forEach(b => { b.disabled = addPending !== null; });
+  }
 
   async function refresh() {
     try {
@@ -401,8 +426,10 @@
     // status pill
     const pill = document.getElementById('statusPill');
     const state = data.state || 'stopped';
+    currentState = state;
     pill.className = 'status-pill ' + state;
     pill.textContent = state.charAt(0).toUpperCase() + state.slice(1);
+    updateButtons();
 
     // now playing
     const np = data.nowPlaying;
@@ -424,9 +451,11 @@
       if (queue.length > addPending.sizeAtAdd) {
         toast('Added to queue', 'ok');
         addPending = null;
+        updateButtons();
       } else if (Date.now() - addPending.startTime > 30000) {
         toast('Nothing added — link may be inaccessible or private', 'err');
         addPending = null;
+        updateButtons();
       }
     }
     lastQueueSize = queue.length;
@@ -472,6 +501,7 @@
             <button class="file-add" onclick="addLocal(${f.index})">+ Add</button>
           </div>
         `).join('');
+        updateButtons();
       }
     } catch (e) { /* ignore */ }
   }
@@ -485,9 +515,12 @@
   }
 
   async function addUrl() {
+    if (addPending !== null) { toast('Still fetching previous track…', 'err'); return; }
     const input = document.getElementById('urlInput');
     const url = input.value.trim();
     if (!url) { toast('Enter a link first', 'err'); return; }
+    addPending = { sizeAtAdd: lastQueueSize, startTime: Date.now() };
+    updateButtons();
     try {
       const res = await fetch('/api/queue/add', {
         method: 'POST',
@@ -497,15 +530,19 @@
       if (res.ok) {
         input.value = '';
         toast('Fetching…', '');
-        addPending = { sizeAtAdd: lastQueueSize, startTime: Date.now() };
         refresh();
       } else {
+        addPending = null;
+        updateButtons();
         toast(await errorMsg(res, 'Failed to add'), 'err');
       }
-    } catch (e) { toast('Network error', 'err'); }
+    } catch (e) { addPending = null; updateButtons(); toast('Network error', 'err'); }
   }
 
   async function addLocal(index) {
+    if (addPending !== null) { toast('Still fetching previous track…', 'err'); return; }
+    addPending = { sizeAtAdd: lastQueueSize, startTime: Date.now() };
+    updateButtons();
     try {
       const res = await fetch('/api/queue/add', {
         method: 'POST',
@@ -514,12 +551,13 @@
       });
       if (res.ok) {
         toast('Fetching…', '');
-        addPending = { sizeAtAdd: lastQueueSize, startTime: Date.now() };
         refresh();
       } else {
+        addPending = null;
+        updateButtons();
         toast(await errorMsg(res, 'Failed to add'), 'err');
       }
-    } catch (e) { toast('Network error', 'err'); }
+    } catch (e) { addPending = null; updateButtons(); toast('Network error', 'err'); }
   }
 
   function confirmClear() {
@@ -603,14 +641,24 @@
   }
 
   async function ctrl(action) {
+    if (ctrlBusy) return;
+    ctrlBusy = true;
+    updateButtons();
     try {
       const res = await fetch('/api/queue/' + action, { method: 'POST' });
       if (!res.ok) {
         toast(await errorMsg(res, 'Failed: ' + action), 'err');
         return;
       }
-      setTimeout(refresh, 400);
-    } catch (e) { toast('Network error', 'err'); }
+      // give the backend a moment to transition state, then refresh
+      await new Promise(r => setTimeout(r, 400));
+      await refresh();
+    } catch (e) {
+      toast('Network error', 'err');
+    } finally {
+      ctrlBusy = false;
+      updateButtons();
+    }
   }
 
   let toastTimer = null;
@@ -628,6 +676,7 @@
   }
 
   // init
+  updateButtons();
   refresh();
   loadLocalFiles();
   refreshTimer = setInterval(refresh, 3000);

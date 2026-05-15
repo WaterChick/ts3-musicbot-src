@@ -143,14 +143,15 @@ object WebServer {
                 put("link", track.link.link)
             })
         }
-        val np = sq?.nowPlaying()
+        val rawState = sq?.getState() ?: SongQueue.State.QUEUE_STOPPED
+        val np = if (rawState != SongQueue.State.QUEUE_STOPPED) sq?.nowPlaying() else null
         val nowPlaying = JSONObject().apply {
             put("title", np?.title?.name ?: "")
             put("artists", np?.artists?.toShortString() ?: "")
             put("link", np?.link?.link ?: "")
             put("empty", np?.isEmpty() ?: true)
         }
-        val state = sq?.getState()?.name?.lowercase()?.removePrefix("queue_") ?: "stopped"
+        val state = rawState.name.lowercase().removePrefix("queue_")
         ex.sendJson(
             JSONObject()
                 .put("queue", queueArr)
@@ -265,7 +266,7 @@ object WebServer {
     }
 
     private fun doSkip(ex: HttpExchange) = withQueue(ex) { sq ->
-        if (sq.getQueue().isEmpty()) {
+        if (sq.getQueue().isEmpty() && sq.getState() == SongQueue.State.QUEUE_STOPPED) {
             ex.sendError(409, "Nothing to skip"); return@withQueue
         }
         sq.skipSong()
